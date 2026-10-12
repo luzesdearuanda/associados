@@ -527,3 +527,34 @@ td.pick{width:36px}
   .row-item .who{flex-basis:100%}
   .row-actions{width:100%;justify-content:flex-start}
 }
+
+/* Financeiro */
+.modal.modal-wide{max-width:760px}
+.fin-pos{color:var(--ok)}
+.fin-neg{color:var(--bad)}
+.fin-neu{color:var(--muted)}
+td.valor{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+th.num{text-align:right}
+.fin-ic{white-space:nowrap;color:var(--muted);text-align:right}
+.fin-ic svg{width:16px;height:16px;vertical-align:-3px}
+.fin-ic span+span{margin-left:6px}
+.fin-filtros .field{flex:0 1 165px}
+.fin-filtros .search{align-self:end;flex:1 1 220px}
+.fin-resumo{display:flex;flex-wrap:wrap;gap:4px 18px;margin:0}
+.fin-big{font-family:var(--f-display);font-size:1.4rem}
+.kpi.money .k-val{font-size:1.45rem}
+.comp-img{max-width:100%;max-height:65vh;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff;justify-self:center}
+.rec-preview svg{width:100%;height:auto;display:block;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.doc .doc-t.rel tr > th{width:auto}
+.doc .doc-t tr > .num{text-align:right;white-space:nowrap}
+.doc .doc-t tr.tot > td{font-weight:700;background:#f4f7f4}
+.doc .doc-t tr.canc > td{color:#999}
+.doc h3{font-size:13px;margin:12px 0 2px}
+.rel-res{margin:6px 0}
+.rel-sign{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:44px;text-align:center;font-size:11.5px;break-inside:avoid}
+.rel-sign .line{display:block;border-top:1px solid #222;margin-bottom:4px}
+@media (max-width:760px){
+  .cards td.fin-ic:empty{display:none}
+  .fin-filtros .field{flex:1 1 140px}
+  .rel-sign{grid-template-columns:1fr}
+}
