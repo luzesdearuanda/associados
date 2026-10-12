@@ -178,9 +178,11 @@ const assoc = id => S.associados.find(a => a.id === id);
 const categoria = id => S.categorias.find(c => c.id === id);
 const catNome = id => (categoria(id) || { nome: '—' }).nome;
 const funcao = id => S.funcoes.find(f => f.id === id);
-const funcoesAtuais = aid => S.assocFuncoes.filter(x => x.assocId === aid && (!x.fim || x.fim >= TODAY()));
+const funcoesAtuais = aid => S.assocFuncoes.filter(x => x.assocId === aid && (!x.fim || x.fim > TODAY()));
 const funcoesTodas = aid => S.assocFuncoes.filter(x => x.assocId === aid).sort((a, b) => (a.fim ? 1 : 0) - (b.fim ? 1 : 0) || b.inicio.localeCompare(a.inicio));
-function funcaoPrincipal(aid) { const af = funcoesAtuais(aid); const p = af.find(x => x.principal) || af[0]; return p ? (funcao(p.funcaoId) || {}).nome || '' : ''; }
+// Na carteirinha: a função principal da casa e o cargo administrativo principal (um de cada tipo)
+function principaisAtuais(aid) { const af = funcoesAtuais(aid); return ['Da casa', 'Administrativa'].map(t => { const d = af.filter(x => (funcao(x.funcaoId) || {}).tipo === t); return d.find(x => x.principal) || d[0]; }).filter(Boolean); }
+function funcaoPrincipal(aid) { return principaisAtuais(aid).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).join(' · '); }
 const carteirinhaAtiva = aid => S.carteirinhas.find(c => c.assocId === aid && c.status === 'Ativa');
 const carteirinhasDe = aid => S.carteirinhas.filter(c => c.assocId === aid).sort((a, b) => b.emitidaEm.localeCompare(a.emitidaEm));
 const assocCfg = () => ({ ...DEFAULT_ASSOC, ...((S && S.config && S.config.assoc) || {}) });
@@ -382,7 +384,7 @@ function assocFiltrados() {
 function assocResults() {
   const list = assocFiltrados();
   if (!list.length) return `<div class="table-wrap"><div class="empty">Nenhum associado encontrado.${P.q ? '' : ' <button class="btn sm" data-act="go" data-v="associadoForm">Cadastrar associado</button>'}</div></div>`;
-  return `<p class="small muted">${plural(list.length, 'associado', 'associados')}</p><div class="table-wrap cards"><table><thead><tr><th>Associado</th><th>Categoria</th><th>Função principal</th><th>Mensalidade</th><th>Carteirinha</th></tr></thead><tbody>
+  return `<p class="small muted">${plural(list.length, 'associado', 'associados')}</p><div class="table-wrap cards"><table><thead><tr><th>Associado</th><th>Categoria</th><th>Função</th><th>Mensalidade</th><th>Carteirinha</th></tr></thead><tbody>
     ${list.map(a => { const c = cartSt(a); return `<tr class="clickable" data-act="go" data-v="associado" data-id="${a.id}">
       <td class="lead"><div class="who-row">${avatar(a)}<div><div class="t">${esc(a.nome)}</div><div class="s mono">${fmtMat(a.matricula)}${a.situacao !== 'Ativo' ? ` · ${a.situacao}` : ''}</div></div></div></td>
       <td data-label="Categoria">${esc(catNome(a.categoriaId))}</td>
@@ -420,7 +422,7 @@ function anoMensal(a, fin, ano) {
 VIEWS.associado = {
   render() {
     const a = assoc(P.id); if (!a) return '<div class="empty">Associado não encontrado.</div>';
-    const fin = financeiro(a), cs = cartSt(a), afs = funcoesTodas(a.id), cards = carteirinhasDe(a.id);
+    const fin = financeiro(a), cs = cartSt(a), afs = funcoesTodas(a.id), prAtuais = principaisAtuais(a.id).map(x => x.id), cards = carteirinhasDe(a.id);
     const ano = +(P.ano || new Date().getFullYear());
     const pags = S.pagamentos.filter(p => p.assocId === a.id).sort((x, y) => y.competencia.localeCompare(x.competencia) || y.registradoEm.localeCompare(x.registradoEm));
     const anos = [...new Set([new Date().getFullYear(), ...pags.map(p => +p.competencia.slice(0, 4))])].sort((x, y) => y - x);
@@ -443,11 +445,11 @@ VIEWS.associado = {
             ${a.obs ? `<div class="full"><dt>Observações</dt><dd>${esc(a.obs)}</dd></div>` : ''}
           </dl></section>
         <section class="panel"><div class="panel-head"><h2>Funções</h2><button class="btn sm primary" data-act="funAdd" data-id="${a.id}">${ic('plus')} Atribuir função</button></div>
-          ${afs.length ? `<div class="list">${afs.map(x => { const f = funcao(x.funcaoId) || { nome: '?', tipo: '' }, enc = x.fim && x.fim < TODAY(); return `<div class="row-item ${enc ? 'dim' : ''}">
-            <span class="who"><b>${esc(f.nome)}${x.principal && !enc ? ' <span class="chip">principal</span>' : ''}</b><span class="small muted">${esc(f.tipo)} · ${enc ? `de ${fmtD(x.inicio)} a ${fmtD(x.fim)}` : x.fim ? `até ${fmtD(x.fim)}` : `desde ${fmtD(x.inicio)}`}</span></span>
-            <span class="row-actions">${enc ? '' : `${x.principal ? '' : `<button class="btn sm ghost" data-act="funPrincipal" data-id="${x.id}">Tornar principal</button>`}<button class="btn sm" data-act="funEncerrar" data-id="${x.id}">Encerrar</button>`}<button class="btn sm ghost icon" data-act="funExcluir" data-id="${x.id}" aria-label="Excluir lançamento" title="Excluir (lançamento errado)">${ic('x')}</button></span></div>`; }).join('')}</div>`
+          ${afs.length ? `<div class="list">${afs.map(x => { const f = funcao(x.funcaoId) || { nome: '?', tipo: '' }, enc = x.fim && x.fim <= TODAY(), naCart = !enc && prAtuais.includes(x.id); return `<div class="row-item ${enc ? 'dim' : ''}">
+            <span class="who"><b>${esc(f.nome)}${naCart ? ' <span class="chip">na carteirinha</span>' : ''}</b><span class="small muted">${esc(f.tipo)} · ${enc ? `de ${fmtD(x.inicio)} a ${fmtD(x.fim)}` : x.fim ? `até ${fmtD(x.fim)}` : `desde ${fmtD(x.inicio)}`}</span></span>
+            <span class="row-actions">${enc ? '' : `${naCart ? '' : `<button class="btn sm ghost" data-act="funPrincipal" data-id="${x.id}">Usar na carteirinha</button>`}<button class="btn sm" data-act="funEncerrar" data-id="${x.id}">Encerrar</button>`}<button class="btn sm ghost icon" data-act="funExcluir" data-id="${x.id}" aria-label="Excluir lançamento" title="Excluir (lançamento errado)">${ic('x')}</button></span></div>`; }).join('')}</div>`
           : '<div class="empty">Nenhuma função atribuída.</div>'}
-          <p class="small muted">A função principal aparece na carteirinha.</p></section>
+          <p class="small muted">Atribua quantas funções precisar: da casa e administrativas. Na carteirinha aparecem a função principal da casa e o cargo administrativo principal (ex.: Dirigente espiritual · Presidente).</p></section>
       </div>
       <section class="panel"><div class="panel-head"><h2>Mensalidades</h2>
         <div class="toolbar">${anos.length > 1 ? `<select data-ch="assocAno" aria-label="Ano">${anos.map(y => `<option ${y === ano ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}<button class="btn sm primary" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button></div></div>
@@ -513,7 +515,7 @@ VIEWS.associadoForm = {
           <div class="field"><label for="f-cat">Categoria <span class="req">*</span></label><select id="f-cat"><option value="">Escolha…</option>${cats.map(c => `<option value="${c.id}" ${a && a.categoriaId === c.id ? 'selected' : ''}>${esc(c.nome)} · ${c.valor ? fmtBRL(c.valor) + '/mês' : 'sem mensalidade'}</option>`).join('')}</select><span class="msg" id="m-cat"></span></div>
           <div class="field"><label for="f-ing">Data de ingresso <span class="req">*</span></label><input id="f-ing" type="date" value="${v('dataIngresso', TODAY())}" max="${TODAY()}"><span class="msg" id="m-ing"></span></div>
           <div class="field"><label for="f-sit">Situação</label><select id="f-sit">${['Ativo', 'Afastado', 'Desligado', 'Falecido'].map(s => `<option ${(a ? a.situacao : 'Ativo') === s ? 'selected' : ''}>${s}</option>`).join('')}</select><span class="hint">Só associados ativos têm carteirinha válida e mensalidade cobrada.</span></div>
-          ${ed ? '' : `<div class="field"><label for="f-fun">Função principal</label><select id="f-fun"><option value="">Nenhuma por enquanto</option>${['Da casa', 'Administrativa'].map(t => `<optgroup label="${t}">${S.funcoes.filter(f => f.ativa && f.tipo === t).map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</optgroup>`).join('')}</select><span class="hint">Outras funções podem ser atribuídas depois.</span></div>`}
+          ${ed ? '' : [['funC', 'Da casa', 'Função na casa'], ['funA', 'Administrativa', 'Cargo administrativo']].map(([id, t, rot]) => `<div class="field"><label for="f-${id}">${rot}</label><select id="f-${id}"><option value="">Nenhuma</option>${S.funcoes.filter(f => f.ativa && f.tipo === t).map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select>${t === 'Administrativa' ? '<span class="hint">As duas aparecem na carteirinha. Outras funções podem ser atribuídas depois.</span>' : ''}</div>`).join('')}
           <div class="field full"><label for="f-obs">Observações</label><textarea id="f-obs">${v('obs')}</textarea></div>
         </div></fieldset>
         <div class="form-actions"><button type="button" class="btn" data-act="go" data-v="${ed ? 'associado' : 'associados'}" ${ed ? `data-id="${a.id}"` : ''}>Cancelar</button><button class="btn primary">${ed ? 'Salvar alterações' : 'Cadastrar associado'}</button></div>
@@ -615,7 +617,7 @@ VIEWS.funcoes = {
       const fs = S.funcoes.filter(f => f.tipo === tipo && (f.ativa || isAdmin())).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       return `<section class="panel"><div class="panel-head"><h2>${tipo === 'Da casa' ? 'Funções da casa' : 'Cargos administrativos'}</h2>${isAdmin() ? `<button class="btn sm" data-act="funcaoNova" data-t="${tipo}">${ic('plus')} Nova</button>` : ''}</div>
         ${fs.length ? fs.map(f => {
-          const quem = S.assocFuncoes.filter(x => x.funcaoId === f.id && (!x.fim || x.fim >= TODAY())).map(x => assoc(x.assocId)).filter(a => a && a.situacao === 'Ativo').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+          const quem = S.assocFuncoes.filter(x => x.funcaoId === f.id && (!x.fim || x.fim > TODAY())).map(x => assoc(x.assocId)).filter(a => a && a.situacao === 'Ativo').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
           return `<div class="fun-block ${f.ativa ? '' : 'dim'}"><div class="fun-head"><b>${esc(f.nome)}</b> <span class="small muted">${plural(quem.length, 'pessoa', 'pessoas')}${f.ativa ? '' : ' · inativa'}</span>${isAdmin() ? `<button class="btn sm ghost" data-act="funcaoEditar" data-id="${f.id}">${ic('edit')} Editar</button>` : ''}</div>
             ${quem.length ? `<div class="chips">${quem.map(a => `<button class="chip-btn" data-act="go" data-v="associado" data-id="${a.id}">${avatar(a, 'xs')}${esc(a.nome)}</button>`).join('')}</div>` : '<p class="small muted">Ninguém nesta função.</p>'}</div>`;
         }).join('') : '<div class="empty">Nenhuma função cadastrada.</div>'}</section>`;
@@ -852,8 +854,8 @@ const validadePrevista = () => { const d = new Date(); return S.config.validadeM
 /* ---- Relatórios e planilha ---- */
 function csvCampo(v) { v = String(v ?? ''); return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
 function exportarCsv(list) {
-  const cab = ['Matrícula', 'Nome', 'CPF', 'RG', 'Nascimento', 'Telefone', 'E-mail', 'Endereço', 'Categoria', 'Situação', 'Ingresso', 'Função principal', 'Outras funções', 'Carteirinha válida até', 'Meses em atraso'];
-  const linhas = list.map(a => { const c = carteirinhaAtiva(a.id), f = financeiro(a), pr = funcaoPrincipal(a.id); return [fmtMat(a.matricula), a.nome, isAdmin() ? fmtCPF(a.cpf) : maskCPF(a.cpf), a.rg, fmtD(a.nascimento).replace('—', ''), a.telefone, a.email, a.endereco, catNome(a.categoriaId), a.situacao, fmtD(a.dataIngresso), pr, funcoesAtuais(a.id).map(x => (funcao(x.funcaoId) || {}).nome).filter(n => n && n !== pr).join(', '), c ? fmtD(c.validade) : '', f.atraso || '']; });
+  const cab = ['Matrícula', 'Nome', 'CPF', 'RG', 'Nascimento', 'Telefone', 'E-mail', 'Endereço', 'Categoria', 'Situação', 'Ingresso', 'Funções na carteirinha', 'Outras funções', 'Carteirinha válida até', 'Meses em atraso'];
+  const linhas = list.map(a => { const c = carteirinhaAtiva(a.id), f = financeiro(a), pr = funcaoPrincipal(a.id); return [fmtMat(a.matricula), a.nome, isAdmin() ? fmtCPF(a.cpf) : maskCPF(a.cpf), a.rg, fmtD(a.nascimento).replace('—', ''), a.telefone, a.email, a.endereco, catNome(a.categoriaId), a.situacao, fmtD(a.dataIngresso), pr, funcoesAtuais(a.id).filter(x => !principaisAtuais(a.id).includes(x)).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).join(', '), c ? fmtD(c.validade) : '', f.atraso || '']; });
   const txt = '﻿' + [cab, ...linhas].map(r => r.map(csvCampo).join(';')).join('\r\n');
   baixar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), `associados-${TODAY()}.csv`);
 }
@@ -876,7 +878,7 @@ const ACT = {
   printLista() {
     const list = assocFiltrados();
     printHTML(`<div class="doc">${docCab(`Lista de associados (${(P.sit || 'Ativo') === 'todos' ? 'todas as situações' : (P.sit || 'Ativo') + 's'}) · ${plural(list.length, 'pessoa', 'pessoas')}`)}
-      <table class="doc-t"><thead><tr><th>Matr.</th><th>Nome</th><th>Categoria</th><th>Função principal</th><th>Telefone</th><th>Situação</th></tr></thead><tbody>
+      <table class="doc-t"><thead><tr><th>Matr.</th><th>Nome</th><th>Categoria</th><th>Função</th><th>Telefone</th><th>Situação</th></tr></thead><tbody>
       ${list.map(a => `<tr><td class="mono">${fmtMat(a.matricula)}</td><td>${esc(a.nome)}</td><td>${esc(catNome(a.categoriaId))}</td><td>${esc(funcaoPrincipal(a.id) || '—')}</td><td>${esc(a.telefone || '')}</td><td>${a.situacao}</td></tr>`).join('')}</tbody></table></div>`, 'doc-print');
   },
   printMens() {
@@ -887,7 +889,7 @@ const ACT = {
   },
   printFuncoes() {
     const bloco = tipo => S.funcoes.filter(f => f.ativa && f.tipo === tipo).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(f => {
-      const q = S.assocFuncoes.filter(x => x.funcaoId === f.id && (!x.fim || x.fim >= TODAY())).map(x => ({ a: assoc(x.assocId), x })).filter(o => o.a && o.a.situacao === 'Ativo').sort((m, n) => m.a.nome.localeCompare(n.a.nome, 'pt-BR'));
+      const q = S.assocFuncoes.filter(x => x.funcaoId === f.id && (!x.fim || x.fim > TODAY())).map(x => ({ a: assoc(x.assocId), x })).filter(o => o.a && o.a.situacao === 'Ativo').sort((m, n) => m.a.nome.localeCompare(n.a.nome, 'pt-BR'));
       return `<tr><td><b>${esc(f.nome)}</b></td><td>${q.map(o => `${esc(o.a.nome)} <span class="muted">(desde ${fmtD(o.x.inicio)})</span>`).join('<br>') || '—'}</td></tr>`;
     }).join('');
     printHTML(`<div class="doc">${docCab('Quadro de funções')}<h3>Cargos administrativos</h3><table class="doc-t"><tbody>${bloco('Administrativa')}</tbody></table><h3 style="margin-top:14px">Funções da casa</h3><table class="doc-t"><tbody>${bloco('Da casa')}</tbody></table></div>`, 'doc-print');
@@ -910,7 +912,8 @@ const ACT = {
     openModal(`<h2>Atribuir função</h2><p class="muted">${esc(a.nome)}</p>
       <div class="field"><label for="m-fun">Função</label><select id="m-fun">${['Da casa', 'Administrativa'].map(tp => `<optgroup label="${tp}">${S.funcoes.filter(f => f.ativa && f.tipo === tp && !atuais.includes(f.id)).map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</optgroup>`).join('')}</select></div>
       <div class="field"><label for="m-ini">Desde</label><input id="m-ini" type="date" value="${TODAY()}" max="${TODAY()}"></div>
-      <label class="check"><input type="checkbox" id="m-prin" ${atuais.length ? '' : 'checked disabled'}> Função principal (aparece na carteirinha)</label>
+      <label class="check"><input type="checkbox" id="m-prin"> Usar na carteirinha no lugar da atual do mesmo tipo</label>
+      <p class="small muted">Se for a primeira função desse tipo (da casa ou administrativa), ela já vai para a carteirinha.</p>
       <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="funAddOk" data-id="${a.id}">Atribuir</button></div>`);
   },
   funAddOk(t) { run(async () => { await api('assocFuncao.adicionar', { assocId: t.dataset.id, funcaoId: $('#m-fun').value, inicio: $('#m-ini').value, principal: $('#m-prin').checked }); closeModal(); render(); toast('Função atribuída'); }); },
@@ -1101,11 +1104,11 @@ const FORM = {
     const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: val('end'), categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs') };
     if (ed) { p.id = P.id; if ($('#f-mat')) p.matricula = val('mat'); }
     else if (val('mat')) p.matricula = val('mat');
-    const foto = UI.foto, fun = !ed && val('fun');
+    const foto = UI.foto, funs = ed ? [] : [val('funC'), val('funA')].filter(Boolean);
     run(async () => {
       try {
         const r = await api('associado.salvar', p);
-        if (!ed && fun) await api('assocFuncao.adicionar', { assocId: r.assocId, funcaoId: fun, inicio: p.dataIngresso, principal: true }, { msg: 'Salvando função…' });
+        for (const fun of funs) await api('assocFuncao.adicionar', { assocId: r.assocId, funcaoId: fun, inicio: p.dataIngresso, principal: true }, { msg: 'Salvando funções…' });
         if (!ed && foto) await api('associado.foto', { assocId: r.assocId, foto: foto.foto, mini: foto.mini }, { msg: 'Enviando foto…' });
         UI.foto = null;
         toast(ed ? 'Cadastro atualizado' : `Associado cadastrado · matrícula ${fmtMat(r.matricula)}`);
