@@ -467,6 +467,7 @@ tr.clickable:hover > td{background:var(--surface-2)}
 .month.mute{background:var(--mute-soft);border-color:transparent;color:var(--mute)}
 .month.future{border-style:dashed;color:var(--muted)}
 .month.none{color:var(--muted);opacity:.55}
+.month.isento{background:var(--info-soft);border-color:transparent;color:var(--info)}
 .month-picks{display:flex;flex-wrap:wrap;gap:6px}
 .mpick{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 8px;cursor:pointer;font-weight:600;font-size:.88rem;background:var(--surface)}
 .mpick.late{border-color:var(--bad);color:var(--bad)}
