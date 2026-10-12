@@ -1,7 +1,7 @@
 {
-  "name": "Associados Luzes de Aruanda",
-  "short_name": "Associados",
-  "description": "Associados, funções, mensalidades e carteirinhas da Associação Centro de Umbanda Luzes de Aruanda.",
+  "name": "Secretaria Luzes de Aruanda",
+  "short_name": "Secretaria",
+  "description": "Secretaria da Associação Centro de Umbanda Luzes de Aruanda: associados, mensalidades, carteirinhas e financeiro.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",
