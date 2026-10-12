@@ -131,7 +131,7 @@ async function api(action, payload = {}, opt = {}) {
     throw e;
   } finally { if (!opt.silent) busy(false); }
 }
-const TBL = { Operadores: ['operadores', 'email'], Categorias: ['categorias', 'id'], Funcoes: ['funcoes', 'id'], Associados: ['associados', 'id'], AssocFuncoes: ['assocFuncoes', 'id'], Pagamentos: ['pagamentos', 'id'], Carteirinhas: ['carteirinhas', 'id'], FinContas: ['finContas', 'id'], FinCategorias: ['finCategorias', 'id'], FinLancamentos: ['finLancamentos', 'id'] };
+const TBL = { Operadores: ['operadores', 'email'], Categorias: ['categorias', 'id'], Funcoes: ['funcoes', 'id'], Associados: ['associados', 'id'], AssocFuncoes: ['assocFuncoes', 'id'], Pagamentos: ['pagamentos', 'id'], Carteirinhas: ['carteirinhas', 'id'], FinContas: ['finContas', 'id'], FinCategorias: ['finCategorias', 'id'], FinLancamentos: ['finLancamentos', 'id'], Documentos: ['documentos', 'id'] };
 function applyChanges(ch) {
   if (!S) return;
   Object.keys(TBL).forEach(name => {
@@ -427,6 +427,7 @@ function assocFiltrados() {
     if ((P.sit || 'Ativo') !== 'todos' && a.situacao !== (P.sit || 'Ativo')) return false;
     if (P.cat && a.categoriaId !== P.cat) return false;
     if (P.fun && !funcoesAtuais(a.id).some(x => x.funcaoId === P.fun)) return false;
+    if (P.ficha && (P.ficha === 'pendente' ? !!a.fichaEm : !a.fichaEm)) return false;
     if (!q) return true;
     return norm(a.nome).includes(q) || (qd && (String(a.matricula) === String(+qd) || (qd.length >= 4 && a.cpf.includes(qd))));
   }).sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
@@ -446,11 +447,12 @@ function assocResults() {
 VIEWS.associados = {
   render() {
     return `<div class="page-head"><div><h1>Associados</h1><p class="sub">${plural(S.associados.filter(a => a.situacao === 'Ativo').length, 'ativo', 'ativos')} · ${S.associados.length} no cadastro.</p></div>
-      <div class="toolbar"><button class="btn sm" data-act="exportCsv">${ic('download')} Planilha (CSV)</button><button class="btn sm" data-act="printLista">${ic('print')} Imprimir lista</button><button class="btn primary" data-act="go" data-v="associadoForm">${ic('plus')} Novo associado</button></div></div>
+      <div class="toolbar"><button class="btn sm" data-act="exportCsv">${ic('download')} Planilha (CSV)</button><button class="btn sm" data-act="printLista">${ic('print')} Imprimir lista</button><button class="btn sm" data-act="fichaBranco">${ic('file')} Ficha em branco</button><button class="btn primary" data-act="go" data-v="associadoForm">${ic('plus')} Novo associado</button></div></div>
       <div class="toolbar"><label class="search"><span class="sr">Buscar</span>${ic('search')}<input id="as-q" data-in="asQ" value="${esc(P.q || '')}" placeholder="Nome, matrícula ou CPF" autocomplete="off"></label>
         <div class="field" style="flex:0 1 170px"><label class="sr" for="as-sit">Situação</label><select id="as-sit" data-ch="asSit">${['Ativo', 'Afastado', 'Desligado', 'Falecido', 'todos'].map(s => `<option value="${s}" ${(P.sit || 'Ativo') === s ? 'selected' : ''}>${s === 'todos' ? 'Todas as situações' : s + 's'}</option>`).join('')}</select></div>
         <div class="field" style="flex:0 1 170px"><label class="sr" for="as-cat">Categoria</label><select id="as-cat" data-ch="asCat"><option value="">Todas as categorias</option>${S.categorias.map(c => `<option value="${c.id}" ${P.cat === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>
-        <div class="field" style="flex:0 1 190px"><label class="sr" for="as-fun">Função</label><select id="as-fun" data-ch="asFun"><option value="">Todas as funções</option>${S.funcoes.filter(f => f.ativa).map(f => `<option value="${f.id}" ${P.fun === f.id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div></div>
+        <div class="field" style="flex:0 1 190px"><label class="sr" for="as-fun">Função</label><select id="as-fun" data-ch="asFun"><option value="">Todas as funções</option>${S.funcoes.filter(f => f.ativa).map(f => `<option value="${f.id}" ${P.fun === f.id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
+        <div class="field" style="flex:0 1 170px"><label class="sr" for="as-ficha">Ficha de inscrição</label><select id="as-ficha" data-ch="asFicha"><option value="">Ficha: todas</option><option value="pendente" ${P.ficha === 'pendente' ? 'selected' : ''}>Ficha pendente</option><option value="entregue" ${P.ficha === 'entregue' ? 'selected' : ''}>Ficha entregue</option></select></div></div>
       <div id="as-res">${assocResults()}</div>`;
   }
 };
@@ -481,7 +483,7 @@ VIEWS.associado = {
         <button class="profile-photo" data-act="fotoTrocar" data-id="${a.id}" aria-label="Trocar foto">${a.fotoMini ? `<img src="data:image/jpeg;base64,${a.fotoMini}" alt="Foto de ${esc(a.nome)}">` : `<span>${ic('camera')}<small>Adicionar foto</small></span>`}</button>
         <div class="profile-info"><h1>${esc(a.nome)}</h1>
           <p class="sub"><span class="mono">Matrícula ${fmtMat(a.matricula)}</span> · ${esc(catNome(a.categoriaId))} · desde ${fmtD(a.dataIngresso)}</p>
-          <div class="pills">${pill(a.situacao, SIT_CLS[a.situacao] || 'mute')} ${finPill(a, fin)} ${pill(cs.label, cs.cls)}</div></div>
+          <div class="pills">${pill(a.situacao, SIT_CLS[a.situacao] || 'mute')} ${finPill(a, fin)} ${pill(cs.label, cs.cls)} ${a.fichaEm ? '' : pill('Ficha pendente', 'warn')}</div></div>
         <div class="toolbar profile-act"><button class="btn" data-act="go" data-v="associadoForm" data-id="${a.id}">${ic('edit')} Editar</button>${a.situacao === 'Ativo' ? `<button class="btn primary" data-act="cartEmitir" data-id="${a.id}">${ic('card')} ${cs.c ? 'Renovar carteirinha' : 'Emitir carteirinha'}</button>` : ''}</div>
       </div></div>
       <div class="grid-2">
@@ -492,6 +494,7 @@ VIEWS.associado = {
             <div><dt>Telefone</dt><dd>${a.telefone ? `<a href="tel:${digits(a.telefone)}">${esc(a.telefone)}</a>` : '—'}</dd></div>
             <div><dt>E-mail</dt><dd>${a.email ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '—'}</dd></div>
             <div class="full"><dt>Endereço</dt><dd>${esc(a.endereco || '—')}</dd></div>
+            ${a.responsavelNome ? `<div class="full"><dt>Responsável legal${ehMenor(a) ? ' (menor de 18 anos)' : ''}</dt><dd>${esc(a.responsavelNome)}${a.responsavelParentesco ? ` (${esc(a.responsavelParentesco)})` : ''}${a.responsavelCpf ? ` · CPF ${showCPF(a.responsavelCpf)}` : ''}</dd></div>` : ehMenor(a) ? '<div class="full"><dt>Responsável legal</dt><dd style="color:var(--warn)">menor de 18 anos sem responsável cadastrado</dd></div>' : ''}
             ${a.obs ? `<div class="full"><dt>Observações</dt><dd>${esc(a.obs)}</dd></div>` : ''}
           </dl></section>
         <section class="panel"><div class="panel-head"><h2>Funções</h2><button class="btn sm primary" data-act="funAdd" data-id="${a.id}">${ic('plus')} Atribuir função</button></div>
@@ -501,6 +504,7 @@ VIEWS.associado = {
           : '<div class="empty">Nenhuma função atribuída.</div>'}
           <p class="small muted">Atribua quantas funções precisar: da casa e administrativas. Na carteirinha aparecem a função principal da casa e o cargo administrativo principal (ex.: Dirigente espiritual · Presidente).</p></section>
       </div>
+      ${docsPainel(a)}
       <section class="panel"><div class="panel-head"><h2>Mensalidades</h2>
         <div class="toolbar">${anos.length > 1 ? `<select data-ch="assocAno" aria-label="Ano">${anos.map(y => `<option ${y === ano ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}<button class="btn sm primary" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button></div></div>
         ${fin.cobrado ? `<p class="small muted">${esc(catNome(a.categoriaId))}: ${fmtBRL(fin.valor)} por mês, cobrado desde ${fmtComp(fin.inicio)}. ${fin.atraso ? `<b style="color:var(--bad)">${plural(fin.atraso, 'mês', 'meses')} em atraso: ${fin.atrasadas.map(fmtComp).join(', ')}</b>.` : 'Nenhum mês em atraso.'}</p>`
@@ -553,13 +557,18 @@ VIEWS.associadoForm = {
           <div class="field full"><label for="f-nome">Nome completo <span class="req">*</span></label><input id="f-nome" value="${v('nome')}" autocomplete="off"><span class="msg" id="m-nome"></span></div>
           <div class="field"><label for="f-cpf">CPF</label><input id="f-cpf" class="mono" inputmode="numeric" data-in="cpfForm" value="${esc(a ? fmtCPF(a.cpf) : '')}" placeholder="000.000.000-00"><span class="msg" id="m-cpf"></span></div>
           <div class="field"><label for="f-rg">RG</label><input id="f-rg" value="${v('rg')}"></div>
-          <div class="field"><label for="f-nasc">Data de nascimento</label><input id="f-nasc" type="date" value="${v('nascimento')}" max="${TODAY()}"><span class="msg" id="m-nasc"></span></div>
+          <div class="field"><label for="f-nasc">Data de nascimento</label><input id="f-nasc" type="date" value="${v('nascimento')}" max="${TODAY()}" data-ch="nascForm"><span class="msg" id="m-nasc"></span></div>
           ${ed && !isAdmin() ? '' : `<div class="field"><label for="f-mat">Matrícula</label><input id="f-mat" class="mono" inputmode="numeric" value="${ed ? a.matricula : ''}" placeholder="${ed ? '' : `Automática: ${fmtMat(Math.max(S.seqMatricula || 0, ...S.associados.map(x => x.matricula), 0) + 1)}`}"><span class="hint">${ed ? 'Só o administrador altera.' : 'Deixe em branco para usar a próxima.'}</span><span class="msg" id="m-mat"></span></div>`}
         </div></fieldset>
         <fieldset><legend>Contato</legend><div class="fields">
           <div class="field"><label for="f-tel">Telefone / WhatsApp</label><input id="f-tel" inputmode="tel" value="${v('telefone')}" placeholder="(54) 90000-0000"></div>
           <div class="field"><label for="f-email">E-mail</label><input id="f-email" type="email" value="${v('email')}"><span class="hint">Usado para enviar a carteirinha.</span><span class="msg" id="m-email"></span></div>
           <div class="field full"><label for="f-end">Endereço</label><input id="f-end" value="${v('endereco')}" placeholder="Rua, número, bairro, cidade/UF, CEP"></div>
+        </div></fieldset>
+        <fieldset id="f-resp-box" ${a && (ehMenor(a) || a.responsavelNome) ? '' : 'hidden'}><legend>Responsável legal (menor de 18 anos)</legend><div class="fields">
+          <div class="field"><label for="f-rnome">Nome do responsável <span class="req">*</span></label><input id="f-rnome" value="${v('responsavelNome')}"><span class="msg" id="m-rnome"></span></div>
+          <div class="field"><label for="f-rcpf">CPF do responsável</label><input id="f-rcpf" class="mono" inputmode="numeric" data-in="cpfResp" value="${esc(a && a.responsavelCpf ? fmtCPF(a.responsavelCpf) : '')}" placeholder="000.000.000-00"><span class="msg" id="m-rcpf"></span></div>
+          <div class="field"><label for="f-rpar">Parentesco</label><input id="f-rpar" value="${v('responsavelParentesco')}" placeholder="Ex.: mãe, pai, avó"><span class="hint">Assina a ficha e o termo de uso de imagem.</span></div>
         </div></fieldset>
         <fieldset><legend>Associação</legend><div class="fields">
           <div class="field"><label for="f-cat">Categoria <span class="req">*</span></label><select id="f-cat"><option value="">Escolha…</option>${cats.map(c => `<option value="${c.id}" ${a && a.categoriaId === c.id ? 'selected' : ''}>${esc(c.nome)} · ${c.valor ? fmtBRL(c.valor) + '/mês' : 'sem mensalidade'}</option>`).join('')}</select><span class="msg" id="m-cat"></span></div>
@@ -706,6 +715,11 @@ VIEWS.configuracoes = {
           <div class="field"><label for="c-rass">Recibos assinados por</label><select id="c-rass"><option value="presidente" ${c.reciboAssina !== 'tesoureiro' ? 'selected' : ''}>Presidente (usa a assinatura cadastrada abaixo)</option><option value="tesoureiro" ${c.reciboAssina === 'tesoureiro' ? 'selected' : ''}>Tesoureiro(a) (assina à mão)</option></select></div>
           <div class="field"><label for="c-tes">Nome do(a) tesoureiro(a)</label><input id="c-tes" value="${esc(c.tesoureiroNome || '')}"><span class="hint">Aparece no recibo (se escolhido) e na prestação de contas.</span></div>
           <div class="field"><label for="c-cid">Cidade (no recibo)</label><input id="c-cid" value="${esc(c.cidade || '')}" placeholder="Passo Fundo - RS"></div>
+        </div></fieldset>
+        <fieldset><legend>Ficha de inscrição e termo de uso de imagem</legend><div class="fields">
+          <div class="field full"><label for="c-decl">Declaração da ficha</label><textarea id="c-decl" rows="3" maxlength="1500">${esc(c.fichaDeclaracao || '')}</textarea></div>
+          <div class="field full"><label for="c-termo">Texto do termo de uso de imagem</label><textarea id="c-termo" rows="9" maxlength="4000">${esc(c.termoImagem || '')}</textarea>
+            <span class="hint">Linha em branco separa parágrafos. Marcadores preenchidos na impressão: <span class="mono">{associacao}</span>, <span class="mono">{cnpj}</span>, <span class="mono">{identificacao}</span> (nome e CPF de quem assina; para menor, do responsável) e <span class="mono">{imagem}</span>. Deixe vazio para voltar ao texto padrão.</span></div>
         </div></fieldset>
         <fieldset><legend>Dados da associação</legend><div class="fields">
           <div class="field full"><label for="a-nome">Nome da associação</label><input id="a-nome" value="${esc(a.nome || '')}"></div>
@@ -889,6 +903,112 @@ VIEWS.financeiro = {
       ${body}`;
   }
 };
+
+/* ---- Ficha de inscrição e termo de uso de imagem (impressão A4) ---- */
+const TIPOS_DOC = ['Ficha de inscrição assinada', 'Documento de identidade', 'Comprovante de residência', 'Outro'];
+const docsDe = aid => (S.documentos || []).filter(d => d.assocId === aid && !d.excluido).sort((x, y) => y.enviadoEm.localeCompare(x.enviadoEm));
+const ehMenor = a => !!(a && a.nascimento) && idade(a.nascimento) < 18;
+const FICHA_CSS = `@page{size:A4 portrait;margin:12mm 14mm}
+.ficha{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10.5pt;line-height:1.35;background:#fff}
+.ficha-pag{break-after:page;padding:0}.ficha-pag:last-child{break-after:auto}
+.fh{display:flex;align-items:center;gap:10px;border-bottom:2px solid #2D7A38;padding-bottom:6px;margin-bottom:8px}
+.fh img{width:46px;height:46px;border-radius:50%;flex:none}.fh .n{font-weight:700;font-size:11.5pt}.fh .s{font-size:8.5pt;color:#444}
+.fh .mat{margin-left:auto;border:1.5px solid #1C3557;border-radius:6px;padding:3px 10px;text-align:center;font-size:7.5pt;color:#444;white-space:nowrap}
+.fh .mat b{display:block;font-size:13pt;color:#1C3557;font-family:'Courier New',monospace;min-width:22mm}
+.ft{text-align:center;font-size:13pt;font-weight:700;letter-spacing:.06em;margin:4px 0 10px;color:#1C3557}
+.fgrid{display:grid;grid-template-columns:1fr 32mm;gap:10px;align-items:start}
+.foto{width:30mm;height:40mm;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#777;text-align:center;overflow:hidden;justify-self:end}
+.foto img{width:100%;height:100%;object-fit:cover}
+table.fc{width:100%;border-collapse:collapse;table-layout:fixed}
+table.fc td{border:1px solid #9aa4a0;padding:2px 6px 3px;vertical-align:top;height:10.5mm}
+table.fc.top td{height:12.6mm}
+table.fc .l{display:block;font-size:6.8pt;text-transform:uppercase;letter-spacing:.05em;color:#555}
+table.fc .v{font-size:10pt;font-weight:600;overflow-wrap:anywhere}
+.fsec{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2D7A38;margin:10px 0 4px}
+.fdecl{margin:12px 0 6px;text-align:justify}.flocal{margin:12px 0 0}
+.fass{display:grid;grid-template-columns:repeat(auto-fit,minmax(62mm,1fr));gap:14mm;margin-top:20mm;text-align:center;font-size:9pt;break-inside:avoid}
+.fass span{display:block;border-top:1px solid #111;padding-top:3px}.fass small{display:block;color:#444}
+.fuso{margin-top:10mm;border:1px dashed #888;padding:6px 8px;font-size:8.5pt;color:#333;display:flex;gap:18px;flex-wrap:wrap}
+.termo p{text-align:justify;margin:0 0 9px}.linha{display:inline-block;min-width:70mm;border-bottom:1px solid #111}`;
+// Monta a ficha (página 1) e o termo de imagem (página 2). Sem associado: ficha em branco para preencher à mão.
+function fichaHTML(a, foto) {
+  const c = assocCfg(), cfg = S.config, branco = !a, menor = branco || ehMenor(a);
+  const v = x => (x === undefined || x === null || x === '') ? '' : esc(x);
+  const cel = (rot, val, span = 1) => `<td colspan="${span}"><span class="l">${rot}</span><span class="v">${val || '&nbsp;'}</span></td>`;
+  const funcoes = a ? principaisAtuais(a.id).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).concat(funcoesAtuais(a.id).filter(x => !principaisAtuais(a.id).includes(x)).map(x => (funcao(x.funcaoId) || {}).nome)).join(', ') : '';
+  const cat = a ? categoria(a.categoriaId) : null;
+  const cnpj = c.cnpj ? `CNPJ ${fmtCNPJ(c.cnpj)}` : '';
+  const cab = `<div class="fh"><img src="${LOGO}" alt=""><div><div class="n">${esc(c.nome)}</div><div class="s">${esc([cnpj, c.endereco].filter(Boolean).join(' · '))}</div></div>
+    <div class="mat">Matrícula<b>${a ? fmtMat(a.matricula) : '&nbsp;'}</b></div></div>`;
+  const local = `${esc(cfg.cidade || '')}, ____ de ____________________ de ________.`;
+  const tpl = (t, extra) => esc(t || '').replace(/\{associacao\}/g, `<b>${esc(c.nome)}</b>`).replace(/\{cnpj\}/g, esc(fmtCNPJ(c.cnpj || '')) || '____________________')
+    .replace(/\{identificacao\}/g, extra.identificacao).replace(/\{imagem\}/g, extra.imagem)
+    .split(/\n\s*\n/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+  const L = '<span class="linha"></span>';
+  const ident = branco ? `eu, ${L}, inscrito(a) no CPF sob o nº ${L}, (se responsável legal: responsável por ${L},)`
+    : menor ? `eu, <b>${v(a.responsavelNome) || L}</b>, inscrito(a) no CPF sob o nº <b>${a.responsavelCpf ? fmtCPF(a.responsavelCpf) : L}</b>, ${a.responsavelParentesco ? esc(a.responsavelParentesco.toLowerCase()) + ' e ' : ''}responsável legal por <b>${v(a.nome)}</b>,`
+    : `eu, <b>${v(a.nome)}</b>, inscrito(a) no CPF sob o nº <b>${a.cpf ? fmtCPF(a.cpf) : L}</b>,`;
+  const imagem = branco ? 'minha imagem e voz (ou a imagem e a voz do(a) menor sob minha responsabilidade)' : menor ? 'a imagem e a voz do(a) menor acima identificado(a)' : 'minha imagem e minha voz';
+  const assinantes = branco ? [['Associado(a)', ''], ['Responsável legal (se menor de 18 anos)', '']]
+    : menor ? [['Responsável legal', a.responsavelNome], ['Associado(a)', a.nome]] : [['Associado(a)', a.nome]];
+  const assHtml = list => `<div class="fass">${list.map(([r, n]) => `<div><span>${esc(n || '')}</span><small>${r}</small></div>`).join('')}</div>`;
+  return `<div class="ficha">
+  <section class="ficha-pag">${cab}
+    <div class="ft">FICHA DE INSCRIÇÃO DE ASSOCIADO(A)</div>
+    <div class="fgrid"><table class="fc top"><tbody>
+      <tr>${cel('Nome completo', a && v(a.nome), 2)}</tr>
+      <tr>${cel('CPF', a && a.cpf ? fmtCPF(a.cpf) : '')}${cel('RG', a && v(a.rg))}</tr>
+      <tr>${cel('Data de nascimento', a && a.nascimento ? fmtD(a.nascimento) : '')}${cel('Idade', a && a.nascimento ? idade(a.nascimento) + ' anos' : '')}</tr>
+    </tbody></table><div class="foto">${foto ? `<img src="data:image/jpeg;base64,${foto}" alt="">` : 'Foto<br>3 × 4'}</div></div>
+    <table class="fc" style="margin-top:-1px"><tbody>
+      <tr>${cel('Telefone / WhatsApp', a && v(a.telefone))}${cel('E-mail', a && v(a.email))}</tr>
+      <tr>${cel('Endereço (rua, número, bairro, cidade/UF, CEP)', a && v(a.endereco), 2)}</tr>
+    </tbody></table>
+    <div class="fsec">Associação</div>
+    <table class="fc"><tbody>
+      <tr>${cel('Categoria', cat ? esc(cat.nome) : '')}${cel('Mensalidade', cat ? (cat.valor ? fmtBRL(cat.valor) + ' por mês' : 'sem mensalidade') : '')}${cel('Data de ingresso', a ? fmtD(a.dataIngresso) : '')}</tr>
+      <tr>${cel('Funções na casa e cargos', esc(funcoes), 3)}</tr>
+    </tbody></table>
+    ${menor ? `<div class="fsec">Responsável legal ${branco ? '(preencher se o associado for menor de 18 anos)' : '(associado menor de 18 anos)'}</div>
+    <table class="fc"><tbody><tr>${cel('Nome do responsável', a && v(a.responsavelNome), 2)}${cel('Parentesco', a && v(a.responsavelParentesco))}</tr>
+      <tr>${cel('CPF do responsável', a && a.responsavelCpf ? fmtCPF(a.responsavelCpf) : '')}${cel('Telefone do responsável', '', 2)}</tr></tbody></table>` : ''}
+    <div class="fdecl">${tpl(cfg.fichaDeclaracao, { identificacao: '', imagem: '' })}</div>
+    <div class="flocal">${local}</div>
+    ${assHtml(assinantes)}
+    <div class="fuso"><b>Uso da secretaria</b><span>Recebido por: ______________________________</span><span>Data: ____/____/________</span><span>Lançado no sistema: ( )</span></div>
+  </section>
+  <section class="ficha-pag termo">${cab}
+    <div class="ft">TERMO DE AUTORIZAÇÃO DE USO DE IMAGEM E VOZ</div>
+    ${tpl(cfg.termoImagem, { identificacao: ident, imagem })}
+    <div class="flocal">${local}</div>
+    ${assHtml(branco ? [['Assinatura do(a) associado(a) ou do responsável legal', '']] : menor ? [['Responsável legal', a.responsavelNome]] : [['Associado(a)', a.nome]])}
+  </section></div>`;
+}
+async function imprimirFicha(a) {
+  let foto = '';
+  if (a) { busy(true, 'Preparando a ficha…'); try { foto = await fotoCompleta(a.id); } catch (e) { foto = a.fotoMini || ''; } finally { busy(false); } }
+  printHTML(fichaHTML(a, foto), 'ficha-print', FICHA_CSS);
+}
+// Abre um arquivo (base64) num modal: foto aparece na tela; PDF pode ser aberto ou baixado
+function mostrarArquivo(r, titulo) {
+  const bin = atob(r.dados), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  if (UI.compUrl) URL.revokeObjectURL(UI.compUrl);
+  const url = UI.compUrl = URL.createObjectURL(new Blob([bytes], { type: r.mime }));
+  openModal(`<h2>${esc(titulo)}</h2><p class="muted small">${esc(r.nome || '')}</p>
+    ${/^image\//.test(r.mime) ? `<img class="comp-img" src="${url}" alt="${esc(titulo)}">` : `<div class="note"><span>${ic('file')} Arquivo PDF. Use os botões abaixo para abrir ou baixar.</span></div>`}
+    <div class="modal-actions"><a class="btn" href="${url}" download="${esc(r.nome || 'arquivo')}">${ic('download')} Baixar</a><a class="btn" href="${url}" target="_blank" rel="noopener">Abrir em outra aba</a><button class="btn primary" data-act="close">Fechar</button></div>`, 'modal-wide');
+}
+function docsPainel(a) {
+  const docs = docsDe(a.id);
+  return `<section class="panel"><div class="panel-head"><h2>Ficha de inscrição e documentos</h2>
+      <div class="toolbar"><button class="btn sm" data-act="fichaImprimir" data-id="${a.id}">${ic('print')} Imprimir ficha e termo</button><button class="btn sm primary" data-act="docAnexar" data-id="${a.id}">${ic('clip')} Anexar documento</button></div></div>
+    ${a.fichaEm ? `<div class="note ok"><span><b>Ficha de inscrição e termo de imagem assinados</b> · entregue em ${fmtD(a.fichaEm)}</span></div>`
+      : `<div class="note warn"><span><b>Ficha de inscrição pendente.</b> Imprima a ficha e o termo de uso de imagem, colha as assinaturas${ehMenor(a) ? ' (do responsável legal e do associado)' : ''}, escaneie ou fotografe e anexe aqui como "Ficha de inscrição assinada".</span></div>`}
+    ${docs.length ? `<div class="list">${docs.map(d => `<div class="row-item"><span class="who"><b>${esc(d.tipo)}</b><span class="small muted">${esc(d.nome)} · ${fmtStamp(d.enviadoEm)} · ${esc(d.enviadoPor)}${d.obs ? ` · ${esc(d.obs)}` : ''}</span></span>
+      <span class="row-actions"><button class="btn sm" data-act="docVer" data-id="${d.id}">${ic('file')} Abrir</button>${isAdmin() ? `<button class="btn sm ghost icon" data-act="docExcluir" data-id="${d.id}" aria-label="Excluir documento" title="Excluir documento">${ic('x')}</button>` : ''}</span></div>`).join('')}</div>`
+      : '<p class="small muted">Nenhum documento anexado.</p>'}
+  </section>`;
+}
 
 /* ============ Modal, toast, impressão e arquivos ============ */
 function openModal(html, cls = '') { $('#modal-root').innerHTML = `<div class="overlay" data-act="overlay"><div class="modal ${cls}" role="dialog" aria-modal="true">${html}</div></div>`; setTimeout(() => $('#modal-root .modal [autofocus], #modal-root .modal input:not([type=hidden]):not([type=checkbox]):not([type=range]), #modal-root .modal select')?.focus(), 30); }
@@ -1330,7 +1450,7 @@ function finFormSync() {
   $$('[data-act="finTipo"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === f.tipo)));
 }
 // Comprovante: PDF vai como está; foto é reduzida (até 1800 px, JPEG) antes de enviar
-function prepComprovante(file) {
+function prepComprovante(file, maxPx = 1800, q = 0.82) {
   return new Promise((res, rej) => {
     const pdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     if (pdf) { if (file.size > 6 * 1024 * 1024) { rej(new Error('PDF maior que 6 MB. Use um arquivo menor.')); return; } blobB64(file).then(d => res({ mime: 'application/pdf', nome: file.name, dados: d }), rej); return; }
@@ -1338,9 +1458,9 @@ function prepComprovante(file) {
     const url = URL.createObjectURL(file), img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const k = Math.min(1, 1800 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const k = Math.min(1, maxPx / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
-      res({ mime: 'image/jpeg', nome: file.name.replace(/\.[^.]+$/, '') + '.jpg', dados: c.toDataURL('image/jpeg', 0.82).split(',')[1] });
+      res({ mime: 'image/jpeg', nome: file.name.replace(/\.[^.]+$/, '') + '.jpg', dados: c.toDataURL('image/jpeg', q).split(',')[1] });
     };
     img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Não foi possível abrir esta imagem. Use JPG, PNG ou PDF.')); };
     img.src = url;
@@ -1448,12 +1568,7 @@ Object.assign(ACT, {
   finCompVer(t) {
     run(async () => {
       const r = await api('fin.comprovanteObter', { id: t.dataset.id }, { msg: 'Abrindo comprovante…' });
-      const bin = atob(r.dados), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      if (UI.compUrl) URL.revokeObjectURL(UI.compUrl);
-      const url = UI.compUrl = URL.createObjectURL(new Blob([bytes], { type: r.mime }));
-      openModal(`<h2>Comprovante</h2><p class="muted small">${esc(r.nome || '')}</p>
-        ${/^image\//.test(r.mime) ? `<img class="comp-img" src="${url}" alt="Comprovante">` : `<div class="note"><span>${ic('file')} Arquivo PDF. Use os botões abaixo para abrir ou baixar.</span></div>`}
-        <div class="modal-actions"><a class="btn" href="${url}" download="${esc(r.nome || 'comprovante')}">${ic('download')} Baixar</a><a class="btn" href="${url}" target="_blank" rel="noopener">Abrir em outra aba</a><button class="btn primary" data-act="close">Fechar</button></div>`, 'modal-wide');
+      mostrarArquivo(r, 'Comprovante');
     });
   },
   finRecibo(t) {
@@ -1532,6 +1647,47 @@ Object.assign(ACT, {
   finCatOk(t) { run(async () => { await api('fin.categoria.salvar', { id: t.dataset.id || undefined, nome: $('#g-nome').value, tipo: $('#g-tipo').value, ativa: $('#g-ativa') ? $('#g-ativa').checked : true }); closeModal(); render(); toast('Categoria salva'); }); },
 });
 
+/* ============ Ficha de inscrição e documentos: ações ============ */
+Object.assign(ACT, {
+  fichaImprimir(t) { closeModal(); run(() => imprimirFicha(assoc(t.dataset.id))); },
+  fichaBranco() { run(() => imprimirFicha(null)); },
+  fichaOferta(id) {
+    const a = assoc(id); if (!a) return;
+    openModal(`<h2>Associado cadastrado</h2><p class="muted">${esc(a.nome)} · matrícula ${fmtMat(a.matricula)}</p>
+      <p>Imprima agora a <b>ficha de inscrição</b> e o <b>termo de uso de imagem</b> para ${ehMenor(a) ? 'o responsável legal e o associado assinarem' : 'o associado assinar'}. Depois, anexe a ficha assinada no cadastro.</p>
+      <div class="modal-actions"><button class="btn" data-act="close">Depois</button><button class="btn primary" data-act="fichaImprimir" data-id="${a.id}">${ic('print')} Imprimir ficha e termo</button></div>`);
+  },
+  docAnexar(t) {
+    const a = assoc(t.dataset.id);
+    openModal(`<h2>Anexar documento</h2><p class="muted">${esc(a.nome)} · matrícula ${fmtMat(a.matricula)}</p>
+      <div class="field"><label for="d-tipo">Tipo</label><select id="d-tipo">${TIPOS_DOC.map(tp => `<option ${(!a.fichaEm && tp === TIPOS_DOC[0]) ? 'selected' : ''}>${tp}</option>`).join('')}</select></div>
+      <div class="field"><label for="d-arq">Arquivo (foto ou PDF escaneado)</label><input id="d-arq" type="file" accept="image/*,application/pdf"><span class="hint">No celular, dá para fotografar a folha direto pela câmera. Fotos são reduzidas automaticamente; PDF até 6 MB.</span></div>
+      <div class="field"><label for="d-obs">Observação</label><input id="d-obs" maxlength="300" placeholder="Opcional"></div>
+      <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="docAnexarOk" data-id="${a.id}">Anexar</button></div>`);
+  },
+  docAnexarOk(t) {
+    const f = $('#d-arq').files[0]; if (!f) { toast('Escolha o arquivo.', 'bad'); return; }
+    const tipo = $('#d-tipo').value, obs = $('#d-obs').value;
+    run(async () => {
+      const prep = await prepComprovante(f, 2400, 0.85);
+      await api('doc.enviar', { assocId: t.dataset.id, tipo, obs, ...prep }, { msg: 'Enviando documento…' });
+      closeModal(); render(); toast(tipo === TIPOS_DOC[0] ? 'Ficha assinada anexada' : 'Documento anexado');
+    });
+  },
+  docVer(t) {
+    const d = (S.documentos || []).find(x => x.id === t.dataset.id);
+    run(async () => { const r = await api('doc.obter', { id: t.dataset.id }, { msg: 'Abrindo documento…' }); mostrarArquivo(r, d ? d.tipo : 'Documento'); });
+  },
+  docExcluir(t) {
+    const d = (S.documentos || []).find(x => x.id === t.dataset.id);
+    openModal(`<h2>Excluir documento</h2><p class="muted">${esc(d.tipo)} · ${esc(d.nome)}</p>
+      <div class="field"><label for="d-mot">Motivo</label><input id="d-mot" maxlength="300" placeholder="Ex.: arquivo errado, ilegível"></div>
+      <p class="small muted">O arquivo vai para a lixeira do Drive e o registro fica no histórico.${d.tipo === TIPOS_DOC[0] ? ' Se não houver outra ficha assinada, o cadastro volta a ficar com a ficha pendente.' : ''}</p>
+      <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn danger" data-act="docExcluirOk" data-id="${d.id}">Excluir</button></div>`);
+  },
+  docExcluirOk(t) { run(async () => { await api('doc.excluir', { id: t.dataset.id, motivo: $('#d-mot').value }); closeModal(); render(); toast('Documento excluído'); }); },
+});
+
 /* ============ Formulários ============ */
 function fieldErr(id, msg) { const m = $('#m-' + id); if (m) m.textContent = msg || ''; const f = m && m.closest('.field'); if (f) f.classList.toggle('err', !!msg); return !msg; }
 const FORM = {
@@ -1544,8 +1700,11 @@ const FORM = {
     ok = fieldErr('cat', val('cat') ? '' : 'Escolha a categoria.') && ok;
     ok = fieldErr('ing', val('ing') && val('ing') <= TODAY() ? '' : 'Informe a data de ingresso.') && ok;
     ok = fieldErr('mat', !$('#f-mat') || !val('mat') || /^\d{1,6}$/.test(val('mat')) ? '' : 'Só números.') && ok;
+    const menor = !!val('nasc') && idade(val('nasc')) < 18;
+    ok = fieldErr('rnome', !menor || val('rnome').length >= 3 ? '' : 'Informe o responsável legal (menor de 18 anos).') && ok;
+    ok = fieldErr('rcpf', !val('rcpf') || cpfValido(val('rcpf')) ? '' : 'CPF inválido.') && ok;
     if (!ok) { $('.field.err input, .field.err select')?.focus(); return; }
-    const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: val('end'), categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs') };
+    const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: val('end'), categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs'), responsavelNome: val('rnome'), responsavelCpf: digits(val('rcpf')), responsavelParentesco: val('rpar') };
     if (ed) { p.id = P.id; if ($('#f-mat')) p.matricula = val('mat'); }
     else if (val('mat')) p.matricula = val('mat');
     const foto = UI.foto, funs = ed ? [] : [val('funC'), val('funA')].filter(Boolean);
@@ -1557,6 +1716,7 @@ const FORM = {
         UI.foto = null;
         toast(ed ? 'Cadastro atualizado' : `Associado cadastrado · matrícula ${fmtMat(r.matricula)}`);
         go('associado', { id: r.assocId });
+        if (!ed) ACT.fichaOferta(r.assocId);
       } catch (e) {
         if (e.code === 'DUP' && e.extra && e.extra.assocId) { fieldErr('cpf', e.message); openModal(`<h2>CPF já cadastrado</h2><p>${esc(e.message)}</p><div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn primary" data-act="go" data-v="associado" data-id="${e.extra.assocId}">Abrir cadastro</button></div>`); return; }
         throw e;
@@ -1569,7 +1729,7 @@ const FORM = {
     ok = fieldErr('aemail', !v('a-email') || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('a-email')) ? '' : 'E-mail inválido.') && ok;
     if (!ok) return;
     run(async () => {
-      await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), validadeModo: v('c-val'), presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
+      await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), validadeModo: v('c-val'), presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), fichaDeclaracao: v('c-decl'), termoImagem: ($('#c-termo')?.value || '').trim(), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
       render(); toast('Configurações salvas');
     });
   },
@@ -1617,9 +1777,12 @@ const CHG = {
   },
 };
 Object.assign(INP, {
+  cpfResp(el) { el.value = typeCPF(el.value); const d = digits(el.value); fieldErr('rcpf', d.length === 11 && !cpfValido(d) ? 'CPF inválido.' : ''); },
   finQ(el) { P.q = el.value; $('#fin-res').innerHTML = finResults(); },
 });
 Object.assign(CHG, {
+  asFicha(el) { P.ficha = el.value; $('#as-res').innerHTML = assocResults(); },
+  nascForm(el) { const box = $('#f-resp-box'); if (box) box.hidden = !(el.value && idade(el.value) < 18) && !($('#f-rnome') && $('#f-rnome').value); },
   finDe(el) { if (el.value) { P.de = el.value; $('#fin-res').innerHTML = finResults(); } },
   finAte(el) { if (el.value) { P.ate = el.value; $('#fin-res').innerHTML = finResults(); } },
   finContaF(el) { P.conta = el.value; $('#fin-res').innerHTML = finResults(); },
