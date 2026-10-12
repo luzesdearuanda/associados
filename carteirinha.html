@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Minha carteirinha · Luzes de Aruanda</title>
+  <meta name="theme-color" content="#1C3557">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="publico.css">
+  <script src="config.js"></script>
+  <script src="qrcode.js"></script>
+  <script src="cartao.js"></script>
+</head>
+<body>
+<main>
+  <header><img src="logo.png" alt=""><div><b>Carteirinha de associado(a)</b><span id="assoc-nome">Associação Centro de Umbanda Luzes de Aruanda</span></div></header>
+  <div id="conteudo"><div class="spinner" role="status" aria-label="Carregando"></div></div>
+  <footer><a href="validar.html">Validar uma carteirinha</a> · <a href="privacidade.html">Privacidade</a></footer>
+</main>
+<script>
+'use strict';
+(function () {
+  const CFG = window.ASSOCIADOS_CONFIG || {};
+  const el = document.getElementById('conteudo');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtD = iso => { if (!iso) return '—'; const [y, m, d] = String(iso).slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
+  const ICO = { ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>', bad: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.01"/></svg>', img: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>' };
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const chave = 'carteirinha-' + token.slice(0, 12);
+  const guardar = d => { try { localStorage.setItem(chave, JSON.stringify({ d, em: new Date().toISOString() })); } catch (e) { } };
+  const guardado = () => { try { return JSON.parse(localStorage.getItem(chave) || 'null'); } catch (e) { return null; } };
+  const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  function erro(msg) { el.innerHTML = `<div class="status bad">${ICO.bad}<span>${esc(msg)}</span></div>`; }
+  async function montar(r, offline) {
+    const logo = await CARTAO.logo('logo.png');
+    const a = r.associado, c = r.carteirinha;
+    document.getElementById('assoc-nome').textContent = r.config.assoc.nome;
+    const vencida = c.validade < hoje();
+    const d = { nome: a.nome, matricula: a.matricula, funcao: c.funcao, categoria: c.categoria, validade: c.validade, cpf: a.cpf, rg: a.rg, dataIngresso: a.dataIngresso, foto: a.foto, codigo: c.codigo,
+      assoc: r.config.assoc, presidenteNome: r.config.presidenteNome, assinatura: r.assinatura, textoVerso: r.config.textoVerso, siteUrl: r.config.siteUrl, logo, selo: vencida ? { txt: 'VENCIDA', cor: '#B4332A' } : a.situacao !== 'Ativo' ? { txt: a.situacao.toUpperCase(), cor: '#B4332A' } : null };
+    const ok = !vencida && a.situacao === 'Ativo';
+    el.innerHTML = `<div class="status ${ok ? 'ok' : 'bad'}">${ok ? ICO.ok : ICO.bad}<span>${ok ? `Válida até ${fmtD(c.validade)}` : vencida ? `Vencida em ${fmtD(c.validade)}. Procure a secretaria para renovar.` : `Situação do associado: ${esc(a.situacao)}.`}</span></div>
+      ${offline ? `<p class="small muted">Sem conexão: mostrando a carteirinha salva neste aparelho em ${fmtD(offline.slice(0, 10))}.</p>` : ''}
+      <div class="faces"><div>${CARTAO.frente(d)}</div><div>${CARTAO.verso(d)}</div></div>
+      <div class="btns"><button class="btn primary" id="btn-img">${ICO.img} Salvar imagem da carteirinha</button></div>
+      <p class="small muted">Dica: no celular, use "Adicionar à tela inicial" no menu do navegador para abrir a carteirinha com um toque. Este link é pessoal: não compartilhe.</p>`;
+    document.getElementById('btn-img').onclick = () => salvarImagem(d);
+  }
+  function svgImg(svg) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }); }
+  async function salvarImagem(d) {
+    try {
+      const [f, v] = await Promise.all([svgImg(CARTAO.frente(d)), svgImg(CARTAO.verso(d))]);
+      const w = 1011, h = Math.round(w * CARTAO.H / CARTAO.W), g = 40, cv = document.createElement('canvas'); cv.width = w + 2 * g; cv.height = 2 * h + 3 * g;
+      const x = cv.getContext('2d'); x.fillStyle = '#EEF2EE'; x.fillRect(0, 0, cv.width, cv.height); x.drawImage(f, g, g, w, h); x.drawImage(v, g, h + 2 * g, w, h);
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+      const file = new File([blob], 'minha-carteirinha.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Minha carteirinha' }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+      const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+    } catch (e) { alert('Não foi possível gerar a imagem.'); }
+  }
+  async function carregar() {
+    if (token.length < 20) { erro('Link incompleto. Abra o link exatamente como foi enviado pela secretaria.'); return; }
+    let j;
+    try {
+      const res = await fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'publico.carteirinha', payload: { token } }) });
+      j = await res.json();
+    } catch (e) {
+      const g = guardado(); if (g) { montar(g.d, g.em); return; }
+      erro('Sem conexão com o servidor. Confira a internet e tente de novo.'); return;
+    }
+    if (!j.ok) { try { localStorage.removeItem(chave); } catch (e) { } erro(j.error && j.error.message || 'Carteirinha não encontrada.'); return; }
+    guardar(j.data.result); montar(j.data.result);
+  }
+  carregar();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Validar carteirinha · Luzes de Aruanda</title>
+  <meta name="theme-color" content="#1C3557">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="stylesheet" href="publico.css">
+  <script src="config.js"></script>
+</head>
+<body>
+<main>
+  <header><img src="logo.png" alt=""><div><b>Validação de carteirinha</b><span id="assoc-nome">Associação Centro de Umbanda Luzes de Aruanda</span></div></header>
+  <div id="conteudo"></div>
+  <section class="card">
+    <label for="codigo" class="small muted">Código impresso no verso da carteirinha (abaixo do QR Code)</label>
+    <form id="form"><input id="codigo" placeholder="Ex.: K7Q2-M9XP" autocomplete="off" maxlength="12"><button class="btn primary">Validar</button></form>
+  </section>
+  <footer><a href="privacidade.html">Privacidade</a></footer>
+</main>
+<script>
+'use strict';
+(function () {
+  const CFG = window.ASSOCIADOS_CONFIG || {};
+  const el = document.getElementById('conteudo');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtD = iso => { if (!iso) return '—'; const [y, m, d] = String(iso).slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
+  const OK = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M7.5 12.5l3 3 6-7"/></svg>';
+  const NO = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg>';
+  async function validar(codigo) {
+    codigo = String(codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (codigo.length < 6) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="spinner" role="status" aria-label="Validando"></div>';
+    let j;
+    try { const r = await fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'publico.validar', payload: { codigo } }) }); j = await r.json(); }
+    catch (e) { el.innerHTML = `<div class="result bad">${NO}<div class="big">Sem conexão</div><div>Confira a internet e tente de novo.</div></div>`; return; }
+    if (!j.ok) { el.innerHTML = `<div class="result bad">${NO}<div class="big">Erro na validação</div><div>${esc(j.error && j.error.message)}</div></div>`; return; }
+    const v = j.data.result;
+    if (v.assocNome) document.getElementById('assoc-nome').textContent = v.assocNome;
+    if (!v.encontrada) { el.innerHTML = `<div class="result bad">${NO}<div class="big">Carteirinha não encontrada</div><div>O código ${esc(codigo)} não existe. Confira se foi digitado corretamente.</div></div>`; return; }
+    el.innerHTML = `<div class="result ${v.valida ? 'ok' : 'bad'}">${v.valida ? OK : NO}<div class="big">${v.valida ? 'Carteirinha válida' : 'Carteirinha não válida'}</div>${v.valida ? `<div>Associado(a) ativo(a), válida até ${fmtD(v.validade)}.</div>` : `<div>${esc(v.motivo)}</div>`}</div>
+      <section class="card"><div class="pessoa">${v.foto ? `<img src="data:image/jpeg;base64,${v.foto}" alt="Foto de ${esc(v.nome)}">` : '<div class="sem"></div>'}<div><b>${esc(v.nome)}</b><span class="small muted">Matrícula ${String(v.matricula).padStart(4, '0')}</span></div></div>
+        <dl><div><dt>Situação</dt><dd>${esc(v.situacao)}</dd></div><div><dt>Função</dt><dd>${esc(v.funcao || '—')}</dd></div><div><dt>Válida até</dt><dd>${fmtD(v.validade)}</dd></div><div><dt>Emitida em</dt><dd>${fmtD(v.emitidaEm)}</dd></div></dl>
+        <p class="small muted">Confira se a foto corresponde à pessoa. Consulta feita em ${new Date().toLocaleString('pt-BR')}.</p></section>`;
+  }
+  const c = new URLSearchParams(location.search).get('c');
+  if (c) { document.getElementById('codigo').value = c; validar(c); }
+  document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); const v = document.getElementById('codigo').value; history.replaceState(null, '', '?c=' + encodeURIComponent(v.toUpperCase().replace(/[^A-Z0-9]/g, ''))); validar(v); });
+})();
+</script>
+</body>
+</html>
