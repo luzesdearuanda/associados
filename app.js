@@ -131,7 +131,7 @@ async function api(action, payload = {}, opt = {}) {
     throw e;
   } finally { if (!opt.silent) busy(false); }
 }
-const TBL = { Operadores: ['operadores', 'email'], Categorias: ['categorias', 'id'], Funcoes: ['funcoes', 'id'], Associados: ['associados', 'id'], AssocFuncoes: ['assocFuncoes', 'id'], Pagamentos: ['pagamentos', 'id'], Carteirinhas: ['carteirinhas', 'id'], FinContas: ['finContas', 'id'], FinCategorias: ['finCategorias', 'id'], FinLancamentos: ['finLancamentos', 'id'], Documentos: ['documentos', 'id'] };
+const TBL = { Operadores: ['operadores', 'email'], Categorias: ['categorias', 'id'], Funcoes: ['funcoes', 'id'], Associados: ['associados', 'id'], AssocFuncoes: ['assocFuncoes', 'id'], Pagamentos: ['pagamentos', 'id'], Carteirinhas: ['carteirinhas', 'id'], FinContas: ['finContas', 'id'], FinCategorias: ['finCategorias', 'id'], FinLancamentos: ['finLancamentos', 'id'], Documentos: ['documentos', 'id'], Isencoes: ['isencoes', 'id'] };
 function applyChanges(ch) {
   if (!S) return;
   Object.keys(TBL).forEach(name => {
@@ -200,20 +200,34 @@ const avatar = (a, cls = '') => a.fotoMini ? `<img class="avatar ${cls}" src="da
 function financeiro(a) {
   const cat = categoria(a.categoriaId), valor = cat ? Number(cat.valor) || 0 : 0, atual = COMP_ATUAL();
   const pagas = {}; S.pagamentos.forEach(p => { if (p.assocId === a.id && !p.cancelado) pagas[p.competencia] = p; });
-  const aberto = [];
+  const isentos = mesesIsentos(a.id), aberto = [];
   let inicio = '';
   if (a.situacao === 'Ativo' && valor > 0) {
     inicio = [S.config.cobrancaDesde, compOf(a.dataIngresso) || S.config.cobrancaDesde].sort().pop();
     let c = inicio, g = 0;
-    while (c <= atual && g++ < 600) { if (!pagas[c]) aberto.push(c); c = addMonthsComp(c, 1); }
+    while (c <= atual && g++ < 600) { if (!pagas[c] && !isentos[c]) aberto.push(c); c = addMonthsComp(c, 1); }
   }
   const atrasadas = aberto.filter(c => c < atual);
-  return { valor, pagas, aberto, atrasadas, atraso: atrasadas.length, inicio, cobrado: a.situacao === 'Ativo' && valor > 0, bloqueia: atrasadas.length > S.config.toleranciaMeses };
+  return { valor, pagas, aberto, atrasadas, atraso: atrasadas.length, inicio, cobrado: a.situacao === 'Ativo' && valor > 0, bloqueia: atrasadas.length > S.config.toleranciaMeses, isentos, isencao: isencaoVigente(a.id) };
 }
+/* ---- Isenção de mensalidade por período (ex.: desemprego) ---- */
+const MOTIVOS_ISENCAO = ['Desemprego', 'Doença', 'Outro'];
+const isencoesDe = aid => (S.isencoes || []).filter(i => i.assocId === aid && !i.cancelada);
+function mesesIsentos(aid) {
+  const m = {};
+  isencoesDe(aid).forEach(i => { let c = i.inicio, g = 0; while (c <= i.fim && g++ < 120) { m[c] = i; c = addMonthsComp(c, 1); } });
+  return m;
+}
+// Isenção que vale agora ou começa no próximo mês
+const isencaoVigente = aid => isencoesDe(aid).find(i => i.fim >= COMP_ATUAL() && i.inicio <= addMonthsComp(COMP_ATUAL(), 1)) || null;
+// Prazo terminando: último mês isento é este ou o próximo (hora de renovar ou encerrar)
+const isencaoRevisar = i => !!i && !i.encerrada && i.fim <= addMonthsComp(COMP_ATUAL(), 1);
+const isencaoTxt = i => `${i.motivo === 'Outro' && i.obs ? i.obs.split(' · ')[0] : i.motivo} · ${fmtComp(i.inicio)} a ${fmtComp(i.fim)}`;
 function finPill(a, fin = financeiro(a)) {
   if (!fin.cobrado) return pill(a.situacao === 'Ativo' ? 'Isento' : 'Sem cobrança', 'mute');
-  if (!fin.atraso) return pill(fin.aberto.length ? 'Em dia' : 'Em dia', 'ok');
-  return pill(`${plural(fin.atraso, 'mês', 'meses')} em atraso`, fin.bloqueia ? 'bad' : 'warn');
+  const ise = fin.isencao && fin.isencao.inicio <= COMP_ATUAL() ? ' ' + pill(`Isento até ${fmtComp(fin.isencao.fim)}`, 'info') : '';
+  if (!fin.atraso) return ise ? ise.trim() : pill('Em dia', 'ok');
+  return pill(`${plural(fin.atraso, 'mês', 'meses')} em atraso`, fin.bloqueia ? 'bad' : 'warn') + ise;
 }
 // Situação da carteirinha
 function cartSt(a) {
@@ -238,6 +252,7 @@ function kpis() {
     vencendo: fins.filter(x => x.c.code === 'vence'),
     vencidas: fins.filter(x => x.c.code === 'vencida'),
     semCart: fins.filter(x => x.c.code === 'nenhuma'),
+    isencoes: fins.filter(x => x.f.cobrado && x.f.isencao),
     aniv: aniversariantes(new Date().getMonth() + 1),
   };
 }
@@ -390,6 +405,7 @@ VIEWS.inicio = {
       ...k.inadimplentes.map(x => ({ a: x.a, t: `${plural(x.f.atraso, 'mensalidade atrasada', 'mensalidades atrasadas')}`, cls: 'bad' })),
       ...k.vencidas.map(x => ({ a: x.a, t: x.c.label, cls: 'bad' })),
       ...k.vencendo.map(x => ({ a: x.a, t: x.c.label, cls: 'warn' })),
+      ...k.isencoes.filter(x => isencaoRevisar(x.f.isencao)).map(x => ({ a: x.a, t: `isenção termina em ${fmtComp(x.f.isencao.fim)}: renovar ou encerrar`, cls: 'warn' })),
     ].slice(0, 10);
     const catsSemValor = S.categorias.filter(c => c.ativa && !c.valor && !/isent/i.test(c.nome));
     return `
@@ -407,6 +423,7 @@ VIEWS.inicio = {
       ${kpiBox('Mensalidades em atraso', k.inadimplentes.length, `acima da tolerância de ${plural(S.config.toleranciaMeses, 'mês', 'meses')}`, k.inadimplentes.length ? 'bad' : '', 'data-act="go" data-v="mensalidades" data-f="inadimplentes"')}
       ${kpiBox('Carteirinhas vencidas', k.vencidas.length, k.vencendo.length ? `${k.vencendo.length} vencem em até 30 dias` : 'nenhuma vencendo em 30 dias', k.vencidas.length ? 'bad' : k.vencendo.length ? 'warn' : '', 'data-act="go" data-v="carteirinhas" data-f="vencidas"')}
       ${kpiBox('Sem carteirinha', k.semCart.length, 'associados ativos', '', 'data-act="go" data-v="carteirinhas" data-f="sem"')}
+      ${k.isencoes.length ? (rv => kpiBox('Isentos de mensalidade', k.isencoes.length, rv ? `${plural(rv, 'isenção termina', 'isenções terminam')} até ${fmtComp(addMonthsComp(COMP_ATUAL(), 1))}` : 'desemprego, doença e outros', rv ? 'warn' : '', 'data-act="go" data-v="mensalidades" data-f="isencao"'))(k.isencoes.filter(x => isencaoRevisar(x.f.isencao)).length) : ''}
       ${(n => kpiBox('Documentação incompleta', n, n ? 'ativos sem todos os documentos' : 'todos os ativos com documentos', n ? 'warn' : '', 'data-act="go" data-v="associados" data-docs="incompleta"'))(S.associados.filter(a => a.situacao === 'Ativo' && !docStatus(a).completo).length)}
       ${canFin() ? (al => kpiBox('Saldo em caixa e bancos', fmtBRL(saldoTotal()), al.vencidas.length ? `${plural(al.vencidas.length, 'conta vencida', 'contas vencidas')} a pagar` : al.semana.length ? `${plural(al.semana.length, 'conta vence', 'contas vencem')} em 7 dias` : 'nenhuma conta vencida', al.vencidas.length ? 'money bad' : al.semana.length ? 'money warn' : 'money', `data-act="go" data-v="financeiro" ${al.vencidas.length || al.semana.length ? 'data-tab="pagar"' : ''}`))(finAlertas()) : ''}
     </div>
@@ -466,10 +483,11 @@ function anoMensal(a, fin, ano) {
     let st, cls;
     if (p) { st = p.forma === 'Isenção' ? 'Isento' : 'Pago'; cls = p.forma === 'Isenção' ? 'mute' : 'ok'; }
     else if (!fin.cobrado || c < fin.inicio) { st = '—'; cls = 'none'; }
+    else if (fin.isentos[c]) { st = 'Isento'; cls = 'isento'; }
     else if (c > atual) { st = 'A vencer'; cls = 'future'; }
     else if (c === atual) { st = 'Aberto'; cls = 'warn'; }
     else { st = 'Atrasado'; cls = 'bad'; }
-    return `<div class="month ${cls}" title="${fmtCompLongo(c)}: ${st}${p ? ` · ${fmtBRL(p.valor)} em ${fmtD(p.dataPagamento)} (${p.forma})` : ''}"><b>${m}</b><span>${st}</span></div>`;
+    return `<div class="month ${cls}" title="${fmtCompLongo(c)}: ${st}${p ? ` · ${fmtBRL(p.valor)} em ${fmtD(p.dataPagamento)} (${p.forma})` : fin.isentos[c] && fin.cobrado ? ` (${esc(fin.isentos[c].motivo)})` : ''}"><b>${m}</b><span>${st}</span></div>`;
   }).join('')}</div>`;
 }
 VIEWS.associado = {
@@ -518,6 +536,7 @@ VIEWS.associado = {
         <div class="toolbar">${anos.length > 1 ? `<select data-ch="assocAno" aria-label="Ano">${anos.map(y => `<option ${y === ano ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}<button class="btn sm primary" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button></div></div>
         ${fin.cobrado ? `<p class="small muted">${esc(catNome(a.categoriaId))}: ${fmtBRL(fin.valor)} por mês, cobrado desde ${fmtComp(fin.inicio)}. ${fin.atraso ? `<b style="color:var(--bad)">${plural(fin.atraso, 'mês', 'meses')} em atraso: ${fin.atrasadas.map(fmtComp).join(', ')}</b>.` : 'Nenhum mês em atraso.'}</p>`
         : `<p class="small muted">${a.situacao === 'Ativo' ? `Categoria ${esc(catNome(a.categoriaId))} sem valor de mensalidade.` : `Associado ${a.situacao.toLowerCase()}: mensalidades não são cobradas.`}</p>`}
+        ${isencaoPainel(a, fin)}
         ${anoMensal(a, fin, ano)}
         ${pags.length ? `<details ${P.hist ? 'open' : ''}><summary class="small" style="cursor:pointer;font-weight:600;color:var(--brand)">Histórico de pagamentos (${pags.length})</summary>
           <div class="table-wrap cards" style="margin-top:8px"><table><thead><tr><th>Mês</th><th>Valor</th><th>Pago em</th><th>Forma</th><th>Registro</th><th><span class="sr">Ações</span></th></tr></thead><tbody>
@@ -533,6 +552,18 @@ VIEWS.associado = {
   },
   after() { const a = assoc(P.id); if (a && carteirinhaAtiva(a.id)) previewCartao(a); }
 };
+function isencaoPainel(a, fin) {
+  const todas = (S.isencoes || []).filter(i => i.assocId === a.id).sort((x, y) => y.inicio.localeCompare(x.inicio)), v = fin.isencao;
+  if (!fin.cobrado && !todas.length) return '';
+  const btn = (act, rot, cls = '') => `<button class="btn sm ${cls}" data-act="${act}" data-id="${v.id}">${rot}</button>`;
+  const ativa = v ? `<div class="note ${isencaoRevisar(v) ? 'warn' : 'info'}"><span><b>${v.inicio > COMP_ATUAL() ? 'Isenção a partir de' : 'Isento de mensalidade'} ${v.inicio > COMP_ATUAL() ? fmtComp(v.inicio) : ''}</b> · ${esc(isencaoTxt(v))}${v.renovacoes ? ` · ${plural(v.renovacoes, 'renovação', 'renovações')}` : ''}.
+      ${isencaoRevisar(v) ? `<b>Prazo terminando:</b> renove ou encerre. Sem renovação, a cobrança volta em ${fmtComp(addMonthsComp(v.fim, 1))}.` : `A cobrança volta em ${fmtComp(addMonthsComp(v.fim, 1))}.`}
+      ${fin.atraso ? (fin.atraso === 1 ? ' O mês em atraso de antes da isenção continua devido.' : ` Os ${fin.atraso} meses em atraso de antes da isenção continuam devidos.`) : ''}</span>
+      ${canFin() ? `<span class="inline">${btn('isenRenovar', 'Renovar')}${btn('isenEncerrar', 'Encerrar')}${isAdmin() ? btn('isenCancelar', 'Cancelar (engano)', 'ghost danger-text') : ''}</span>` : ''}</div>`
+    : fin.cobrado && canFin() ? `<div class="inline" style="margin:4px 0 10px"><button class="btn sm" data-act="isenConceder" data-id="${a.id}">${ic('plus')} Conceder isenção (desemprego, doença…)</button></div>` : '';
+  const hist = todas.filter(i => i !== v);
+  return ativa + (hist.length ? `<details style="margin:0 0 10px"><summary class="small" style="cursor:pointer;font-weight:600;color:var(--brand)">Isenções anteriores (${hist.length})</summary><div class="list" style="margin-top:8px">${hist.map(i => `<div class="row-item dim"><span class="who"><b>${esc(isencaoTxt(i))}</b><span class="small muted">${i.cancelada ? `Cancelada: ${esc(i.motivoCancelamento)}` : i.encerrada ? `Encerrada: ${esc(i.motivoEncerramento)}` : 'Prazo terminado'} · concedida por ${esc(i.concedidaPor)}</span></span></div>`).join('')}</div></details>` : '');
+}
 function cartPainel(a, cs) {
   const c = cs.c;
   return `<div class="cart-wrap"><div class="cart-preview" id="cart-prev"><div class="cart-face"></div><div class="cart-face"></div></div>
@@ -617,22 +648,22 @@ VIEWS.associadoForm = {
 function mensLista() {
   const mes = P.mes || COMP_ATUAL(), f = P.f || 'todos', q = norm(P.q || '');
   return S.associados.filter(a => a.situacao === 'Ativo').map(a => {
-    const fin = financeiro(a); const p = fin.pagas[mes];
-    const devido = fin.cobrado && mes >= fin.inicio;
-    return { a, fin, p, devido, st: p ? (p.forma === 'Isenção' ? 'isento' : 'pago') : devido ? (mes > COMP_ATUAL() ? 'futuro' : 'aberto') : 'nao' };
+    const fin = financeiro(a); const p = fin.pagas[mes], ise = fin.isentos[mes];
+    const devido = fin.cobrado && mes >= fin.inicio && !ise;
+    return { a, fin, p, devido, ise, st: p ? (p.forma === 'Isenção' ? 'isento' : 'pago') : ise && fin.cobrado ? 'isencao' : devido ? (mes > COMP_ATUAL() ? 'futuro' : 'aberto') : 'nao' };
   }).filter(x => x.fin.cobrado || x.p)
-    .filter(x => f === 'todos' || (f === 'aberto' && x.st === 'aberto') || (f === 'pagos' && (x.st === 'pago' || x.st === 'isento')) || (f === 'inadimplentes' && x.fin.bloqueia))
+    .filter(x => f === 'todos' || (f === 'aberto' && x.st === 'aberto') || (f === 'pagos' && (x.st === 'pago' || x.st === 'isento')) || (f === 'inadimplentes' && x.fin.bloqueia) || (f === 'isencao' && x.st === 'isencao'))
     .filter(x => !q || norm(x.a.nome).includes(q) || String(x.a.matricula) === String(+digits(P.q)))
     .sort((x, y) => x.a.nome.localeCompare(y.a.nome, 'pt-BR'));
 }
 function mensResults() {
   const mes = P.mes || COMP_ATUAL(), list = mensLista();
-  const ST = { pago: ['Pago', 'ok'], isento: ['Isento no mês', 'mute'], aberto: ['Em aberto', 'warn'], futuro: ['A vencer', 'info'], nao: ['Não cobrado', 'mute'] };
+  const ST = { pago: ['Pago', 'ok'], isento: ['Isento no mês', 'mute'], isencao: ['Isento', 'info'], aberto: ['Em aberto', 'warn'], futuro: ['A vencer', 'info'], nao: ['Não cobrado', 'mute'] };
   if (!list.length) return '<div class="table-wrap"><div class="empty">Ninguém nesta lista.</div></div>';
   return `<div class="table-wrap cards"><table><thead><tr><th>Associado</th><th>Mensalidade</th><th>${fmtComp(mes)}</th><th>Atraso total</th><th><span class="sr">Ações</span></th></tr></thead><tbody>
     ${list.map(x => `<tr><td class="lead"><button class="who-row linklike" data-act="go" data-v="associado" data-id="${x.a.id}">${avatar(x.a)}<div><div class="t">${esc(x.a.nome)}</div><div class="s mono">${fmtMat(x.a.matricula)}</div></div></button></td>
       <td data-label="Mensalidade">${esc(catNome(x.a.categoriaId))}<div class="s">${fmtBRL(x.fin.valor)}</div></td>
-      <td data-label="${fmtComp(mes)}">${pill(...ST[x.st])}${x.p ? `<div class="s">${fmtD(x.p.dataPagamento)} · ${esc(x.p.forma)}</div>` : ''}</td>
+      <td data-label="${fmtComp(mes)}">${pill(...ST[x.st])}${x.p ? `<div class="s">${fmtD(x.p.dataPagamento)} · ${esc(x.p.forma)}</div>` : x.st === 'isencao' ? `<div class="s">${esc(x.ise.motivo)} até ${fmtComp(x.ise.fim)}</div>` : ''}</td>
       <td data-label="Atraso total">${x.fin.atraso ? pill(plural(x.fin.atraso, 'mês', 'meses'), x.fin.bloqueia ? 'bad' : 'warn') : '<span class="muted small">em dia</span>'}</td>
       <td class="actions">${x.fin.aberto.length || x.st === 'futuro' ? `<button class="btn sm primary" data-act="pagNovo" data-id="${x.a.id}">${ic('coin')} Registrar</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div>`;
@@ -641,7 +672,7 @@ VIEWS.mensalidades = {
   render() {
     const mes = P.mes || COMP_ATUAL(), f = P.f || 'todos';
     const todos = S.associados.filter(a => a.situacao === 'Ativo').map(a => ({ a, fin: financeiro(a) })).filter(x => x.fin.cobrado);
-    const devidos = todos.filter(x => mes >= x.fin.inicio);
+    const devidos = todos.filter(x => mes >= x.fin.inicio && !x.fin.isentos[mes]), isentosMes = todos.filter(x => x.fin.isentos[mes] && !x.fin.pagas[mes]);
     const pagosMes = devidos.filter(x => x.fin.pagas[mes]);
     const recebidos = S.pagamentos.filter(p => !p.cancelado && compOf(p.dataPagamento) === mes);
     const esperado = devidos.reduce((s, x) => s + x.fin.valor, 0);
@@ -652,11 +683,11 @@ VIEWS.mensalidades = {
         <label class="search" style="align-self:end"><span class="sr">Buscar</span>${ic('search')}<input id="m-q" data-in="mensQ" value="${esc(P.q || '')}" placeholder="Nome ou matrícula" autocomplete="off"></label></div>
       <div class="kpis">
         ${kpiBox(`Pagos em ${fmtComp(mes)}`, `${pagosMes.length} de ${devidos.length}`, devidos.length ? `${Math.round(pagosMes.length / devidos.length * 100)}% dos associados cobrados` : 'ninguém cobrado neste mês')}
-        ${kpiBox('Esperado no mês', fmtBRL(esperado), 'soma das mensalidades devidas')}
+        ${kpiBox('Esperado no mês', fmtBRL(esperado), isentosMes.length ? `soma das devidas · ${plural(isentosMes.length, 'isento', 'isentos')} no mês` : 'soma das mensalidades devidas')}
         ${kpiBox(`Recebido em ${fmtComp(mes)}`, fmtBRL(recebidos.reduce((s, p) => s + p.valor, 0)), `${plural(recebidos.length, 'lançamento', 'lançamentos')} com data de pagamento no mês`)}
         ${kpiBox('Acima da tolerância', todos.filter(x => x.fin.bloqueia).length, 'não podem renovar a carteirinha', todos.some(x => x.fin.bloqueia) ? 'bad' : '', 'data-act="mensF" data-f="inadimplentes"')}
       </div>
-      <div class="tabs" role="tablist">${tab('todos', 'Todos')}${tab('aberto', 'Em aberto no mês', devidos.filter(x => !x.fin.pagas[mes] && mes <= COMP_ATUAL()).length)}${tab('pagos', 'Pagos no mês', pagosMes.length)}${tab('inadimplentes', 'Acima da tolerância', todos.filter(x => x.fin.bloqueia).length)}</div>
+      <div class="tabs" role="tablist">${tab('todos', 'Todos')}${tab('aberto', 'Em aberto no mês', devidos.filter(x => !x.fin.pagas[mes] && mes <= COMP_ATUAL()).length)}${tab('pagos', 'Pagos no mês', pagosMes.length)}${tab('inadimplentes', 'Acima da tolerância', todos.filter(x => x.fin.bloqueia).length)}${isentosMes.length || f === 'isencao' ? tab('isencao', 'Com isenção', isentosMes.length) : ''}</div>
       <div id="mens-res">${mensResults()}</div>`;
   }
 };
@@ -735,6 +766,7 @@ VIEWS.configuracoes = {
         <fieldset><legend>Mensalidades</legend><div class="fields">
           <div class="field"><label for="c-desde">Cobrar mensalidades a partir de</label><input id="c-desde" type="month" value="${c.cobrancaDesde}"><span class="hint">Meses anteriores não contam como atraso. Use o mês em que o controle começou a ser feito no sistema.</span></div>
           <div class="field"><label for="c-tol">Tolerância de atraso (meses)</label><input id="c-tol" type="number" min="0" max="24" value="${c.toleranciaMeses}"><span class="hint">Acima disso a carteirinha não pode ser emitida nem renovada (o admin pode liberar, com motivo).</span></div>
+          <div class="field"><label for="c-isen">Prazo padrão da isenção (meses)</label><input id="c-isen" type="number" min="1" max="12" value="${c.isencaoMeses || 6}"><span class="hint">Sugestão ao conceder isenção por desemprego ou doença. Depois dá para renovar.</span></div>
         </div></fieldset>
         <fieldset><legend>Carteirinha</legend><div class="fields">
           <div class="field"><label for="c-val">Validade</label><select id="c-val"><option value="fimAno" ${c.validadeModo !== '12meses' ? 'selected' : ''}>Até 31 de dezembro do ano da emissão</option><option value="12meses" ${c.validadeModo === '12meses' ? 'selected' : ''}>12 meses a partir da emissão</option></select></div>
@@ -936,7 +968,7 @@ VIEWS.financeiro = {
 };
 
 /* ---- Ficha de inscrição e termo de uso de imagem (impressão A4) ---- */
-const TIPOS_DOC = ['Ficha de inscrição assinada', 'Documento com foto (RG, CNH ou CIN)', 'Comprovante de residência', 'Certidão de nascimento', 'Documento do responsável legal', 'Outro'];
+const TIPOS_DOC = ['Ficha de inscrição assinada', 'Documento com foto (RG, CNH ou CIN)', 'Comprovante de residência', 'Certidão de nascimento', 'Documento do responsável legal', 'Comprovante para isenção', 'Outro'];
 const [DOC_FICHA, DOC_FOTO, DOC_RESID, DOC_CERTIDAO, DOC_RESP] = TIPOS_DOC;
 const TIPOS_DOC_ANTIGOS = { 'Documento de identidade': DOC_FOTO };
 const SEXOS = ['Feminino', 'Masculino', 'Outro', 'Prefiro não informar'];
@@ -1240,8 +1272,8 @@ const validadePrevista = () => { const d = new Date(); return S.config.validadeM
 /* ---- Relatórios e planilha ---- */
 function csvCampo(v) { v = String(v ?? ''); return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
 function exportarCsv(list) {
-  const cab = ['Matrícula', 'Nome', 'Nome social', 'CPF', 'RG', 'Nascimento', 'Sexo', 'Estado civil', 'Profissão', 'Naturalidade', 'Telefone', 'E-mail', 'Endereço', 'CEP', 'Bairro', 'Cidade', 'UF', 'Contato de emergência', 'Telefone de emergência', 'Categoria', 'Situação', 'Ingresso', 'Entrada na corrente', 'Funções na carteirinha', 'Outras funções', 'Carteirinha válida até', 'Meses em atraso', 'Documentação'];
-  const linhas = list.map(a => { const c = carteirinhaAtiva(a.id), f = financeiro(a), pr = funcaoPrincipal(a.id); const st = docStatus(a); return [fmtMat(a.matricula), a.nome, a.nomeSocial, isAdmin() ? fmtCPF(a.cpf) : maskCPF(a.cpf), a.rg, fmtD(a.nascimento).replace('—', ''), a.sexo, a.estadoCivil, a.profissao, a.naturalidade, a.telefone, a.email, enderecoDe(a), a.cep ? fmtCEP(a.cep) : '', a.bairro, a.cidade, a.uf, [a.emergNome, a.emergParentesco ? `(${a.emergParentesco})` : ''].filter(Boolean).join(' '), a.emergTelefone, catNome(a.categoriaId), a.situacao, fmtD(a.dataIngresso), a.entradaCorrente ? fmtD(a.entradaCorrente) : '', pr, funcoesAtuais(a.id).filter(x => !principaisAtuais(a.id).includes(x)).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).join(', '), c ? fmtD(c.validade) : '', f.atraso || '', st.completo ? 'Completa' : 'Falta: ' + st.faltam.join(', ')]; });
+  const cab = ['Matrícula', 'Nome', 'Nome social', 'CPF', 'RG', 'Nascimento', 'Sexo', 'Estado civil', 'Profissão', 'Naturalidade', 'Telefone', 'E-mail', 'Endereço', 'CEP', 'Bairro', 'Cidade', 'UF', 'Contato de emergência', 'Telefone de emergência', 'Categoria', 'Situação', 'Ingresso', 'Entrada na corrente', 'Funções na carteirinha', 'Outras funções', 'Carteirinha válida até', 'Meses em atraso', 'Isenção', 'Documentação'];
+  const linhas = list.map(a => { const c = carteirinhaAtiva(a.id), f = financeiro(a), pr = funcaoPrincipal(a.id); const st = docStatus(a); return [fmtMat(a.matricula), a.nome, a.nomeSocial, isAdmin() ? fmtCPF(a.cpf) : maskCPF(a.cpf), a.rg, fmtD(a.nascimento).replace('—', ''), a.sexo, a.estadoCivil, a.profissao, a.naturalidade, a.telefone, a.email, enderecoDe(a), a.cep ? fmtCEP(a.cep) : '', a.bairro, a.cidade, a.uf, [a.emergNome, a.emergParentesco ? `(${a.emergParentesco})` : ''].filter(Boolean).join(' '), a.emergTelefone, catNome(a.categoriaId), a.situacao, fmtD(a.dataIngresso), a.entradaCorrente ? fmtD(a.entradaCorrente) : '', pr, funcoesAtuais(a.id).filter(x => !principaisAtuais(a.id).includes(x)).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).join(', '), c ? fmtD(c.validade) : '', f.atraso || '', f.isencao ? `${f.isencao.motivo} de ${fmtComp(f.isencao.inicio)} a ${fmtComp(f.isencao.fim)}` : '', st.completo ? 'Completa' : 'Falta: ' + st.faltam.join(', ')]; });
   const txt = '﻿' + [cab, ...linhas].map(r => r.map(csvCampo).join(';')).join('\r\n');
   baixar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), `associados-${TODAY()}.csv`);
 }
@@ -1353,7 +1385,7 @@ const ACT = {
       return;
     }
     const a = assoc(id), fin = financeiro(a);
-    const futuros = []; for (let i = 1; i <= 6; i++) { const c = addMonthsComp(COMP_ATUAL(), i); if (!fin.pagas[c]) futuros.push(c); }
+    const futuros = []; for (let i = 1; i <= 6; i++) { const c = addMonthsComp(COMP_ATUAL(), i); if (!fin.pagas[c] && !fin.isentos[c]) futuros.push(c); }
     const opcoes = [...fin.aberto, ...futuros];
     UI.pag = { id, valor: fin.valor };
     openModal(`<h2>Registrar pagamento</h2><p class="muted">${esc(a.nome)} · ${esc(catNome(a.categoriaId))} · ${fmtBRL(fin.valor)}/mês</p>
@@ -1764,6 +1796,54 @@ Object.assign(ACT, {
       <p class="small muted">O arquivo vai para a lixeira do Drive e o registro fica no histórico.${[DOC_FICHA, DOC_FOTO, DOC_RESID, DOC_CERTIDAO, DOC_RESP].includes(tipoDoc(d)) ? ' Se não houver outro documento deste tipo, a documentação volta a ficar incompleta e a carteirinha fica bloqueada.' : ''}</p>
       <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn danger" data-act="docExcluirOk" data-id="${d.id}">Excluir</button></div>`);
   },
+  isenConceder(t) {
+    const a = assoc(t.dataset.id), fin = financeiro(a), meses = S.config.isencaoMeses || 6;
+    openModal(`<h2>Conceder isenção de mensalidade</h2><p class="muted">${esc(a.nome)} · ${esc(catNome(a.categoriaId))} · ${fmtBRL(fin.valor)}/mês</p>
+      <div class="fields"><div class="field"><label for="i-mot">Motivo</label><select id="i-mot">${MOTIVOS_ISENCAO.map(m => `<option>${m}</option>`).join('')}</select></div>
+        <div class="field"><label for="i-ini">Primeiro mês isento</label><input id="i-ini" type="month" value="${COMP_ATUAL()}" max="${addMonthsComp(COMP_ATUAL(), 1)}" ${isAdmin() ? '' : `min="${addMonthsComp(COMP_ATUAL(), -3)}"`} data-ch="isenPrazo"></div>
+        <div class="field"><label for="i-mes">Duração (meses)</label><input id="i-mes" type="number" min="1" max="12" value="${meses}" data-in="isenPrazo"><span class="hint" id="i-ate">Isento até ${fmtComp(addMonthsComp(COMP_ATUAL(), meses - 1))}.</span></div>
+        <div class="field full"><label for="i-obs">Observação</label><input id="i-obs" maxlength="300" placeholder="Ex.: demitido em setembro; obrigatória se o motivo for Outro"></div>
+        <div class="field full"><label for="i-arq">Comprovante (opcional)</label><input id="i-arq" type="file" accept="image/*,application/pdf"><span class="hint">Carteira de trabalho, termo de rescisão, atestado ou declaração. Fica nos documentos do associado.</span></div></div>
+      ${fin.atraso ? `<div class="note warn"><span>${plural(fin.atraso, 'mês em atraso continua devido', 'meses em atraso continuam devidos')} (${fin.atrasadas.map(fmtComp).join(', ')}). A isenção vale do primeiro mês isento em diante.</span></div>` : ''}
+      <p class="small muted">Perto do fim do prazo, o sistema avisa para renovar ou encerrar. Quando a pessoa voltar a trabalhar, use "Encerrar".</p>
+      <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="isenConcederOk" data-id="${a.id}">Conceder isenção</button></div>`);
+  },
+  isenConcederOk(t) {
+    const motivo = $('#i-mot').value, inicio = $('#i-ini').value, meses = $('#i-mes').value, obs = $('#i-obs').value.trim(), f = $('#i-arq').files[0];
+    if (!inicio) { toast('Informe o primeiro mês isento.', 'bad'); return; }
+    if (motivo === 'Outro' && !obs) { toast('Descreva o motivo em "Observação".', 'bad'); return; }
+    run(async () => {
+      let docId = '';
+      if (f) { const prep = await prepComprovante(f, 2400, 0.85); docId = (await api('doc.enviar', { assocId: t.dataset.id, tipo: 'Comprovante para isenção', obs: `Isenção: ${motivo}`, ...prep }, { msg: 'Enviando comprovante…' })).id; }
+      const r = await api('isencao.conceder', { assocId: t.dataset.id, motivo, inicio, meses, obs, docId }, { msg: 'Concedendo isenção…' });
+      closeModal(); render(); toast(`Isenção concedida até ${fmtComp(r.fim)}`);
+    });
+  },
+  isenRenovar(t) {
+    const i = S.isencoes.find(x => x.id === t.dataset.id), a = assoc(i.assocId), meses = S.config.isencaoMeses || 6;
+    openModal(`<h2>Renovar isenção</h2><p class="muted">${esc(a.nome)} · ${esc(isencaoTxt(i))}</p>
+      <div class="fields"><div class="field"><label for="i-mes">Mais quantos meses?</label><input id="i-mes" type="number" min="1" max="12" value="${meses}" data-in="isenRenova" data-fim="${i.fim}"><span class="hint" id="i-ate">Isento até ${fmtComp(addMonthsComp(i.fim, meses))}.</span></div>
+        <div class="field"><label for="i-obs">Observação</label><input id="i-obs" maxlength="300" placeholder="Ex.: continua desempregado"></div></div>
+      <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="isenRenovarOk" data-id="${i.id}">Renovar</button></div>`);
+  },
+  isenRenovarOk(t) { run(async () => { const r = await api('isencao.renovar', { id: t.dataset.id, meses: $('#i-mes').value, obs: $('#i-obs').value }); closeModal(); render(); toast(`Isenção renovada até ${fmtComp(r.fim)}`); }); },
+  isenEncerrar(t) {
+    const i = S.isencoes.find(x => x.id === t.dataset.id), a = assoc(i.assocId);
+    const padrao = [addMonthsComp(i.inicio, 1), COMP_ATUAL()].sort().pop();
+    openModal(`<h2>Encerrar isenção</h2><p class="muted">${esc(a.nome)} · ${esc(isencaoTxt(i))}</p>
+      <div class="fields"><div class="field"><label for="i-desde">Volta a pagar a partir de</label><input id="i-desde" type="month" value="${padrao}" min="${addMonthsComp(i.inicio, 1)}" max="${addMonthsComp(i.fim, 1)}"><span class="hint">Os meses isentos antes disso continuam isentos.</span></div>
+        <div class="field"><label for="i-emot">Motivo</label><input id="i-emot" maxlength="300" value="${i.motivo === 'Desemprego' ? 'Voltou a trabalhar' : ''}"></div></div>
+      <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn primary" data-act="isenEncerrarOk" data-id="${i.id}">Encerrar isenção</button></div>`);
+  },
+  isenEncerrarOk(t) { run(async () => { await api('isencao.encerrar', { id: t.dataset.id, cobrarDesde: $('#i-desde').value, motivo: $('#i-emot').value }); closeModal(); render(); toast('Isenção encerrada'); }); },
+  isenCancelar(t) {
+    const i = S.isencoes.find(x => x.id === t.dataset.id), a = assoc(i.assocId);
+    openModal(`<h2>Cancelar isenção</h2><p class="muted">${esc(a.nome)} · ${esc(isencaoTxt(i))}</p>
+      <p class="small">Use só para isenção lançada por engano: todos os meses dela voltam a ser cobrados. Para quem voltou a trabalhar, use "Encerrar".</p>
+      <div class="field"><label for="i-cmot">Motivo</label><input id="i-cmot" maxlength="300" placeholder="Ex.: lançada no associado errado"></div>
+      <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn danger" data-act="isenCancelarOk" data-id="${i.id}">Cancelar isenção</button></div>`);
+  },
+  isenCancelarOk(t) { run(async () => { await api('isencao.cancelar', { id: t.dataset.id, motivo: $('#i-cmot').value }); closeModal(); render(); toast('Isenção cancelada'); }); },
   docExcluirOk(t) { run(async () => { await api('doc.excluir', { id: t.dataset.id, motivo: $('#d-mot').value }); closeModal(); render(); toast('Documento excluído'); }); },
 });
 
@@ -1825,7 +1905,7 @@ const FORM = {
     ok = fieldErr('aemail', !v('a-email') || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('a-email')) ? '' : 'E-mail inválido.') && ok;
     if (!ok) return;
     run(async () => {
-      await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), validadeModo: v('c-val'), presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), fichaDeclaracao: v('c-decl'), termoImagem: ($('#c-termo')?.value || '').trim(), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
+      await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), isencaoMeses: v('c-isen'), validadeModo: v('c-val'), presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), fichaDeclaracao: v('c-decl'), termoImagem: ($('#c-termo')?.value || '').trim(), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
       render(); toast('Configurações salvas');
     });
   },
@@ -1873,6 +1953,8 @@ const CHG = {
   },
 };
 Object.assign(INP, {
+  isenPrazo() { const ini = $('#i-ini').value, n = parseInt($('#i-mes').value, 10); const h = $('#i-ate'); if (h) h.textContent = ini && n >= 1 && n <= 12 ? `Isento até ${fmtComp(addMonthsComp(ini, n - 1))}.` : 'De 1 a 12 meses.'; },
+  isenRenova(el) { const n = parseInt(el.value, 10); $('#i-ate').textContent = n >= 1 && n <= 12 ? `Isento até ${fmtComp(addMonthsComp(el.dataset.fim, n))}.` : 'De 1 a 12 meses.'; },
   cepForm(el) {
     const d = digits(el.value).slice(0, 8); el.value = d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d;
     fieldErr('cep', '');
@@ -1882,6 +1964,7 @@ Object.assign(INP, {
   finQ(el) { P.q = el.value; $('#fin-res').innerHTML = finResults(); },
 });
 Object.assign(CHG, {
+  isenPrazo() { INP.isenPrazo(); },
   asDocs(el) { P.docs = el.value; $('#as-res').innerHTML = assocResults(); },
   nascForm(el) { const box = $('#f-resp-box'); if (box) box.hidden = !(el.value && idade(el.value) < 18) && !($('#f-rnome') && $('#f-rnome').value); },
   finDe(el) { if (el.value) { P.de = el.value; $('#fin-res').innerHTML = finResults(); } },
