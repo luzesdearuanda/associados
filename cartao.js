@@ -70,7 +70,10 @@
     const u = 'f' + Math.random().toString(36).slice(2, 8);
     const an = nomeAssoc(d.assoc && d.assoc.nome);
     const nm = ajustar(d.nome || '', 500, 38, 24, 2, true);
-    const fn = ajustar(d.funcao || '—', 500, 28, 18, 1, true);
+    // Funções: "Da casa · Administrativa" → uma por linha, mesmo tamanho de fonte
+    const fPartes = String(d.funcao || '—').split(' · ').filter(Boolean).slice(0, 2);
+    const fAj = fPartes.map(t => ajustar(t, 500, fPartes.length > 1 ? 26 : 28, 17, 1, true));
+    const fn = { linhas: fAj.map(x => x.linhas[0]), px: Math.min(...fAj.map(x => x.px)) };
     const yNome = 228, yNome2 = yNome + (nm.linhas.length - 1) * Math.round(nm.px * 1.1);
     const foto = dataUrl(d.foto), logo = d.logo || '';
     return `${svgAbre('Frente da carteirinha de ' + esc(d.nome), opt.mm)}<defs>${clip(u + 'c')}<clipPath id="${u}p"><rect x="40" y="148" width="234" height="312" rx="14"/></clipPath><clipPath id="${u}l"><circle cx="78" cy="66" r="46"/></clipPath></defs>
@@ -86,8 +89,8 @@
         <rect x="40" y="148" width="234" height="312" rx="14" fill="none" stroke="${COR.verde}" stroke-width="4"/>
         ${rotulo(306, 180, 'Nome')}
         ${texto(306, yNome, nm.linhas, nm.px, { bold: true, cor: COR.navy, lh: Math.round(nm.px * 1.1) })}
-        ${rotulo(306, yNome2 + 52, 'Função')}
-        ${texto(306, yNome2 + 86, fn.linhas, fn.px, { bold: true })}
+        ${rotulo(306, yNome2 + 52, fn.linhas.length > 1 ? 'Funções' : 'Função')}
+        ${texto(306, yNome2 + 86, fn.linhas, fn.px, { bold: true, lh: Math.round(fn.px * 1.2) })}
         ${rotulo(306, 430, 'Matrícula')}${texto(306, 466, [fmtMat(d.matricula)], 34, { bold: true, cor: COR.navy, ls: 1 })}
         ${rotulo(556, 430, 'Válida até')}${texto(556, 466, [fmtD(d.validade)], 34, { bold: true, cor: COR.verde })}
         <rect x="0" y="${H - 44}" width="${W}" height="44" fill="${COR.verde}"/>
