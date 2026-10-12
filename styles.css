@@ -217,6 +217,12 @@ legend{font-family:var(--f-display);font-weight:700;font-size:1.02rem;margin-bot
 .note.info{border-color:var(--info);background:var(--info-soft)}
 .note ul{margin:2px 0 0;padding-left:18px}
 .note b{font-weight:700}
+.doc-check{list-style:none;margin:10px 0 12px;padding:0;display:grid;gap:4px;font-size:.9rem}
+.doc-check li{display:flex;gap:8px;align-items:flex-start}
+.doc-check svg{width:18px;height:18px;flex:none;margin-top:1px;stroke-width:2.4}
+.doc-check li.ok svg{color:var(--ok)}
+.doc-check li.falta{color:var(--muted)}
+.doc-check li.falta svg{color:var(--bad)}
 
 /* Ficha (rótulo/valor) */
 .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px 18px}
