@@ -1,4 +1,4 @@
-/* Associados — Associação Centro de Umbanda Luzes de Aruanda.
+/* Secretaria Luzes de Aruanda — Associação Centro de Umbanda Luzes de Aruanda.
    Cadastro de associados, funções, mensalidades, carteirinhas e financeiro (livro-caixa). Os dados ficam na planilha da conta da associação;
    este arquivo só conversa com a API (Apps Script). */
 'use strict';
@@ -340,12 +340,12 @@ function shell(content) {
   return `
   <div class="shell">
     <aside class="side">
-      <div class="side-brand"><div class="logo-sm"><img src="${LOGO}" alt=""></div><div><b>Luzes de Aruanda</b><span>Cadastro de associados</span></div></div>
+      <div class="side-brand"><div class="logo-sm"><img src="${LOGO}" alt=""></div><div><b>Luzes de Aruanda</b><span>Secretaria</span></div></div>
       <nav class="nav" aria-label="Menu principal">${nav}</nav>
       <div class="side-user"><div><b>${esc(S.session.nome)}</b> <span class="role">${S.session.perfil}</span></div><div class="email">${esc(S.session.email)}</div><button data-act="logout">Sair</button></div>
     </aside>
     <div class="main">
-      <header class="topbar"><div class="logo-sm"><img src="${LOGO}" alt=""></div><b>Associados Luzes de Aruanda</b><span class="role">${S.session.perfil}</span></header>
+      <header class="topbar"><div class="logo-sm"><img src="${LOGO}" alt=""></div><b>Secretaria Luzes de Aruanda</b><span class="role">${S.session.perfil}</span></header>
       <main class="page">${content}</main>
     </div>
   </div>
@@ -370,7 +370,7 @@ function shell(content) {
 /* ============ Telas de acesso ============ */
 const loginCard = body => `<div class="login"><div class="login-card">
     <div class="logo-disc"><img src="${LOGO}" alt="Logo da Associação Centro de Umbanda Luzes de Aruanda"></div>
-    <div style="display:grid;gap:6px"><div class="eyebrow">Secretaria</div><h1>Associação Centro de Umbanda Luzes de Aruanda</h1><p class="muted">Associados, funções, mensalidades e carteirinhas</p></div>
+    <div style="display:grid;gap:6px"><div class="eyebrow">Secretaria</div><h1>Associação Centro de Umbanda Luzes de Aruanda</h1><p class="muted">Associados, mensalidades, carteirinhas e financeiro</p></div>
     ${body}
     <p class="small muted"><a href="privacidade.html" target="_blank" rel="noopener">Política de privacidade</a> · <a href="validar.html">Validar uma carteirinha</a></p>
   </div></div>`;
