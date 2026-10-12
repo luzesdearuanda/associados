@@ -149,7 +149,7 @@ function applyChanges(ch) {
 // Executa uma ação e mostra o erro de forma amigável
 async function run(fn) {
   try { return await fn(); }
-  catch (e) { if (e && e.code === 'AUTH') return; if (!e || !['VALIDATION', 'DUP', 'ATRASO', 'FORBIDDEN', 'NOTFOUND', 'MAIL', 'BUSY', 'NET'].includes(e.code)) console.error(e); toast((e && e.message) || 'Erro inesperado. Tente de novo.', 'bad'); }
+  catch (e) { if (e && e.code === 'AUTH') return; if (!e || !['VALIDATION', 'DUP', 'ATRASO', 'DOCS', 'FORBIDDEN', 'NOTFOUND', 'MAIL', 'BUSY', 'NET'].includes(e.code)) console.error(e); toast((e && e.message) || 'Erro inesperado. Tente de novo.', 'bad'); }
 }
 
 /* ---- Login com Google ---- */
@@ -407,6 +407,7 @@ VIEWS.inicio = {
       ${kpiBox('Mensalidades em atraso', k.inadimplentes.length, `acima da tolerância de ${plural(S.config.toleranciaMeses, 'mês', 'meses')}`, k.inadimplentes.length ? 'bad' : '', 'data-act="go" data-v="mensalidades" data-f="inadimplentes"')}
       ${kpiBox('Carteirinhas vencidas', k.vencidas.length, k.vencendo.length ? `${k.vencendo.length} vencem em até 30 dias` : 'nenhuma vencendo em 30 dias', k.vencidas.length ? 'bad' : k.vencendo.length ? 'warn' : '', 'data-act="go" data-v="carteirinhas" data-f="vencidas"')}
       ${kpiBox('Sem carteirinha', k.semCart.length, 'associados ativos', '', 'data-act="go" data-v="carteirinhas" data-f="sem"')}
+      ${(n => kpiBox('Documentação incompleta', n, n ? 'ativos sem todos os documentos' : 'todos os ativos com documentos', n ? 'warn' : '', 'data-act="go" data-v="associados" data-docs="incompleta"'))(S.associados.filter(a => a.situacao === 'Ativo' && !docStatus(a).completo).length)}
       ${canFin() ? (al => kpiBox('Saldo em caixa e bancos', fmtBRL(saldoTotal()), al.vencidas.length ? `${plural(al.vencidas.length, 'conta vencida', 'contas vencidas')} a pagar` : al.semana.length ? `${plural(al.semana.length, 'conta vence', 'contas vencem')} em 7 dias` : 'nenhuma conta vencida', al.vencidas.length ? 'money bad' : al.semana.length ? 'money warn' : 'money', `data-act="go" data-v="financeiro" ${al.vencidas.length || al.semana.length ? 'data-tab="pagar"' : ''}`))(finAlertas()) : ''}
     </div>
     <div class="grid-2">
@@ -427,7 +428,7 @@ function assocFiltrados() {
     if ((P.sit || 'Ativo') !== 'todos' && a.situacao !== (P.sit || 'Ativo')) return false;
     if (P.cat && a.categoriaId !== P.cat) return false;
     if (P.fun && !funcoesAtuais(a.id).some(x => x.funcaoId === P.fun)) return false;
-    if (P.ficha && (P.ficha === 'pendente' ? !!a.fichaEm : !a.fichaEm)) return false;
+    if (P.docs && (P.docs === 'incompleta') === docStatus(a).completo) return false;
     if (!q) return true;
     return norm(a.nome).includes(q) || (qd && (String(a.matricula) === String(+qd) || (qd.length >= 4 && a.cpf.includes(qd))));
   }).sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
@@ -452,7 +453,7 @@ VIEWS.associados = {
         <div class="field" style="flex:0 1 170px"><label class="sr" for="as-sit">Situação</label><select id="as-sit" data-ch="asSit">${['Ativo', 'Afastado', 'Desligado', 'Falecido', 'todos'].map(s => `<option value="${s}" ${(P.sit || 'Ativo') === s ? 'selected' : ''}>${s === 'todos' ? 'Todas as situações' : s + 's'}</option>`).join('')}</select></div>
         <div class="field" style="flex:0 1 170px"><label class="sr" for="as-cat">Categoria</label><select id="as-cat" data-ch="asCat"><option value="">Todas as categorias</option>${S.categorias.map(c => `<option value="${c.id}" ${P.cat === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>
         <div class="field" style="flex:0 1 190px"><label class="sr" for="as-fun">Função</label><select id="as-fun" data-ch="asFun"><option value="">Todas as funções</option>${S.funcoes.filter(f => f.ativa).map(f => `<option value="${f.id}" ${P.fun === f.id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
-        <div class="field" style="flex:0 1 170px"><label class="sr" for="as-ficha">Ficha de inscrição</label><select id="as-ficha" data-ch="asFicha"><option value="">Ficha: todas</option><option value="pendente" ${P.ficha === 'pendente' ? 'selected' : ''}>Ficha pendente</option><option value="entregue" ${P.ficha === 'entregue' ? 'selected' : ''}>Ficha entregue</option></select></div></div>
+        <div class="field" style="flex:0 1 200px"><label class="sr" for="as-docs">Documentação</label><select id="as-docs" data-ch="asDocs"><option value="">Documentação: todas</option><option value="incompleta" ${P.docs === 'incompleta' ? 'selected' : ''}>Documentação incompleta</option><option value="completa" ${P.docs === 'completa' ? 'selected' : ''}>Documentação completa</option></select></div></div>
       <div id="as-res">${assocResults()}</div>`;
   }
 };
@@ -483,18 +484,26 @@ VIEWS.associado = {
         <button class="profile-photo" data-act="fotoTrocar" data-id="${a.id}" aria-label="Trocar foto">${a.fotoMini ? `<img src="data:image/jpeg;base64,${a.fotoMini}" alt="Foto de ${esc(a.nome)}">` : `<span>${ic('camera')}<small>Adicionar foto</small></span>`}</button>
         <div class="profile-info"><h1>${esc(a.nome)}</h1>
           <p class="sub"><span class="mono">Matrícula ${fmtMat(a.matricula)}</span> · ${esc(catNome(a.categoriaId))} · desde ${fmtD(a.dataIngresso)}</p>
-          <div class="pills">${pill(a.situacao, SIT_CLS[a.situacao] || 'mute')} ${finPill(a, fin)} ${pill(cs.label, cs.cls)} ${a.fichaEm ? '' : pill('Ficha pendente', 'warn')}</div></div>
+          <div class="pills">${pill(a.situacao, SIT_CLS[a.situacao] || 'mute')} ${finPill(a, fin)} ${pill(cs.label, cs.cls)} ${docStatus(a).completo ? '' : pill('Documentação incompleta', 'warn')}</div></div>
         <div class="toolbar profile-act"><button class="btn" data-act="go" data-v="associadoForm" data-id="${a.id}">${ic('edit')} Editar</button>${a.situacao === 'Ativo' ? `<button class="btn primary" data-act="cartEmitir" data-id="${a.id}">${ic('card')} ${cs.c ? 'Renovar carteirinha' : 'Emitir carteirinha'}</button>` : ''}</div>
       </div></div>
       <div class="grid-2">
         <section class="panel"><div class="panel-head"><h2>Dados pessoais</h2></div>
           <dl class="facts">
+            ${a.nomeSocial ? `<div class="full"><dt>Nome social</dt><dd>${esc(a.nomeSocial)}</dd></div>` : ''}
             <div><dt>CPF</dt><dd class="mono">${showCPF(a.cpf)}</dd></div><div><dt>RG</dt><dd>${esc(a.rg || '—')}</dd></div>
             <div><dt>Nascimento</dt><dd>${a.nascimento ? `${fmtD(a.nascimento)} · ${idade(a.nascimento)} anos` : '—'}</dd></div>
+            <div><dt>Naturalidade</dt><dd>${esc(a.naturalidade || '—')}</dd></div>
+            <div><dt>Sexo</dt><dd>${esc(a.sexo || '—')}</dd></div><div><dt>Estado civil</dt><dd>${esc(a.estadoCivil || '—')}</dd></div>
+            <div><dt>Profissão</dt><dd>${esc(a.profissao || '—')}</dd></div>
             <div><dt>Telefone</dt><dd>${a.telefone ? `<a href="tel:${digits(a.telefone)}">${esc(a.telefone)}</a>` : '—'}</dd></div>
             <div><dt>E-mail</dt><dd>${a.email ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '—'}</dd></div>
-            <div class="full"><dt>Endereço</dt><dd>${esc(a.endereco || '—')}</dd></div>
+            <div class="full"><dt>Endereço</dt><dd>${esc(enderecoDe(a) || '—')}</dd></div>
+            <div class="full"><dt>Contato de emergência</dt><dd>${a.emergNome || a.emergTelefone ? `${esc(a.emergNome || '')}${a.emergParentesco ? ` (${esc(a.emergParentesco)})` : ''}${a.emergTelefone ? ` · <a href="tel:${digits(a.emergTelefone)}">${esc(a.emergTelefone)}</a>` : ''}` : '—'}</dd></div>
             ${a.responsavelNome ? `<div class="full"><dt>Responsável legal${ehMenor(a) ? ' (menor de 18 anos)' : ''}</dt><dd>${esc(a.responsavelNome)}${a.responsavelParentesco ? ` (${esc(a.responsavelParentesco)})` : ''}${a.responsavelCpf ? ` · CPF ${showCPF(a.responsavelCpf)}` : ''}</dd></div>` : ehMenor(a) ? '<div class="full"><dt>Responsável legal</dt><dd style="color:var(--warn)">menor de 18 anos sem responsável cadastrado</dd></div>' : ''}
+            ${a.entradaCorrente ? `<div><dt>Entrada na corrente</dt><dd>${fmtD(a.entradaCorrente)}</dd></div>` : ''}
+            ${a.outroTerreiro ? `<div><dt>Outro terreiro</dt><dd>${esc(a.outroTerreiro)}</dd></div>` : ''}
+            ${a.saudeObs ? `<div class="full"><dt>Saúde</dt><dd>${esc(a.saudeObs)}</dd></div>` : ''}
             ${a.obs ? `<div class="full"><dt>Observações</dt><dd>${esc(a.obs)}</dd></div>` : ''}
           </dl></section>
         <section class="panel"><div class="panel-head"><h2>Funções</h2><button class="btn sm primary" data-act="funAdd" data-id="${a.id}">${ic('plus')} Atribuir função</button></div>
@@ -557,13 +566,32 @@ VIEWS.associadoForm = {
           <div class="field full"><label for="f-nome">Nome completo <span class="req">*</span></label><input id="f-nome" value="${v('nome')}" autocomplete="off"><span class="msg" id="m-nome"></span></div>
           <div class="field"><label for="f-cpf">CPF</label><input id="f-cpf" class="mono" inputmode="numeric" data-in="cpfForm" value="${esc(a ? fmtCPF(a.cpf) : '')}" placeholder="000.000.000-00"><span class="msg" id="m-cpf"></span></div>
           <div class="field"><label for="f-rg">RG</label><input id="f-rg" value="${v('rg')}"></div>
+          <div class="field"><label for="f-nsoc">Nome social</label><input id="f-nsoc" value="${v('nomeSocial')}" autocomplete="off"><span class="hint">Opcional. Aparece na ficha.</span></div>
+          <div class="field"><label for="f-sexo">Sexo</label><select id="f-sexo"><option value="">—</option>${SEXOS.map(x => `<option ${a && a.sexo === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
           <div class="field"><label for="f-nasc">Data de nascimento</label><input id="f-nasc" type="date" value="${v('nascimento')}" max="${TODAY()}" data-ch="nascForm"><span class="msg" id="m-nasc"></span></div>
+          <div class="field"><label for="f-nat">Naturalidade</label><input id="f-nat" value="${v('naturalidade')}" placeholder="Cidade/UF onde nasceu"></div>
+          <div class="field"><label for="f-civil">Estado civil</label><select id="f-civil"><option value="">—</option>${ESTADOS_CIVIS.map(x => `<option ${a && a.estadoCivil === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+          <div class="field"><label for="f-prof">Profissão</label><input id="f-prof" value="${v('profissao')}"></div>
           ${ed && !isAdmin() ? '' : `<div class="field"><label for="f-mat">Matrícula</label><input id="f-mat" class="mono" inputmode="numeric" value="${ed ? a.matricula : ''}" placeholder="${ed ? '' : `Automática: ${fmtMat(Math.max(S.seqMatricula || 0, ...S.associados.map(x => x.matricula), 0) + 1)}`}"><span class="hint">${ed ? 'Só o administrador altera.' : 'Deixe em branco para usar a próxima.'}</span><span class="msg" id="m-mat"></span></div>`}
         </div></fieldset>
         <fieldset><legend>Contato</legend><div class="fields">
           <div class="field"><label for="f-tel">Telefone / WhatsApp</label><input id="f-tel" inputmode="tel" value="${v('telefone')}" placeholder="(54) 90000-0000"></div>
           <div class="field"><label for="f-email">E-mail</label><input id="f-email" type="email" value="${v('email')}"><span class="hint">Usado para enviar a carteirinha.</span><span class="msg" id="m-email"></span></div>
-          <div class="field full"><label for="f-end">Endereço</label><input id="f-end" value="${v('endereco')}" placeholder="Rua, número, bairro, cidade/UF, CEP"></div>
+        </div></fieldset>
+        <fieldset><legend>Endereço</legend><div class="fields">
+          ${a && a.endereco && !a.logradouro ? `<div class="field full"><div class="note">Endereço registrado antes: <b>${esc(a.endereco)}</b>. Preencha os campos abaixo para atualizar.</div></div>` : ''}
+          <div class="field"><label for="f-cep">CEP</label><input id="f-cep" class="mono" inputmode="numeric" data-in="cepForm" value="${esc(a && a.cep ? fmtCEP(a.cep) : '')}" placeholder="00000-000"><span class="hint" id="m-cep-h">Digite o CEP para preencher a rua, o bairro e a cidade.</span><span class="msg" id="m-cep"></span></div>
+          <div class="field full"><label for="f-logr">Logradouro</label><input id="f-logr" value="${v('logradouro')}" placeholder="Rua, avenida, travessa…"></div>
+          <div class="field"><label for="f-num">Número</label><input id="f-num" value="${v('numero')}" placeholder="Ou s/n"></div>
+          <div class="field"><label for="f-comp">Complemento</label><input id="f-comp" value="${v('complemento')}" placeholder="Apto, casa, bloco…"></div>
+          <div class="field"><label for="f-bairro">Bairro</label><input id="f-bairro" value="${v('bairro')}"></div>
+          <div class="field"><label for="f-cid">Cidade</label><input id="f-cid" value="${v('cidade')}"></div>
+          <div class="field"><label for="f-uf">UF</label><select id="f-uf"><option value="">—</option>${UFS.map(x => `<option ${a && a.uf === x ? 'selected' : ''}>${x}</option>`).join('')}</select><span class="msg" id="m-uf"></span></div>
+        </div></fieldset>
+        <fieldset><legend>Contato de emergência</legend><div class="fields">
+          <div class="field"><label for="f-enome">Nome</label><input id="f-enome" value="${v('emergNome')}"></div>
+          <div class="field"><label for="f-epar">Parentesco</label><input id="f-epar" value="${v('emergParentesco')}" placeholder="Ex.: esposa, filho, amiga"></div>
+          <div class="field"><label for="f-etel">Telefone</label><input id="f-etel" inputmode="tel" value="${v('emergTelefone')}" placeholder="(54) 90000-0000"></div>
         </div></fieldset>
         <fieldset id="f-resp-box" ${a && (ehMenor(a) || a.responsavelNome) ? '' : 'hidden'}><legend>Responsável legal (menor de 18 anos)</legend><div class="fields">
           <div class="field"><label for="f-rnome">Nome do responsável <span class="req">*</span></label><input id="f-rnome" value="${v('responsavelNome')}"><span class="msg" id="m-rnome"></span></div>
@@ -575,6 +603,9 @@ VIEWS.associadoForm = {
           <div class="field"><label for="f-ing">Data de ingresso <span class="req">*</span></label><input id="f-ing" type="date" value="${v('dataIngresso', TODAY())}" max="${TODAY()}"><span class="msg" id="m-ing"></span></div>
           <div class="field"><label for="f-sit">Situação</label><select id="f-sit">${['Ativo', 'Afastado', 'Desligado', 'Falecido'].map(s => `<option ${(a ? a.situacao : 'Ativo') === s ? 'selected' : ''}>${s}</option>`).join('')}</select><span class="hint">Só associados ativos têm carteirinha válida e mensalidade cobrada.</span></div>
           ${ed ? '' : [['funC', 'Da casa', 'Função na casa'], ['funA', 'Administrativa', 'Cargo administrativo']].map(([id, t, rot]) => `<div class="field"><label for="f-${id}">${rot}</label><select id="f-${id}"><option value="">Nenhuma</option>${S.funcoes.filter(f => f.ativa && f.tipo === t).map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select>${t === 'Administrativa' ? '<span class="hint">As duas aparecem na carteirinha. Outras funções podem ser atribuídas depois.</span>' : ''}</div>`).join('')}
+          <div class="field"><label for="f-corr">Entrada na corrente</label><input id="f-corr" type="date" value="${v('entradaCorrente')}" max="${TODAY()}"><span class="hint">Quando começou a trabalhar na corrente mediúnica (se for o caso).</span><span class="msg" id="m-corr"></span></div>
+          <div class="field"><label for="f-terr">Outro terreiro</label><input id="f-terr" value="${v('outroTerreiro')}" placeholder="Frequenta ou frequentou outra casa?"></div>
+          <div class="field full"><label for="f-saude">Saúde: alergias, condições, medicamentos</label><textarea id="f-saude" placeholder="Informação útil em caso de mal-estar durante as giras.">${v('saudeObs')}</textarea></div>
           <div class="field full"><label for="f-obs">Observações</label><textarea id="f-obs">${v('obs')}</textarea></div>
         </div></fieldset>
         <div class="form-actions"><button type="button" class="btn" data-act="go" data-v="${ed ? 'associado' : 'associados'}" ${ed ? `data-id="${a.id}"` : ''}>Cancelar</button><button class="btn primary">${ed ? 'Salvar alterações' : 'Cadastrar associado'}</button></div>
@@ -905,7 +936,38 @@ VIEWS.financeiro = {
 };
 
 /* ---- Ficha de inscrição e termo de uso de imagem (impressão A4) ---- */
-const TIPOS_DOC = ['Ficha de inscrição assinada', 'Documento de identidade', 'Comprovante de residência', 'Outro'];
+const TIPOS_DOC = ['Ficha de inscrição assinada', 'Documento com foto (RG, CNH ou CIN)', 'Comprovante de residência', 'Certidão de nascimento', 'Documento do responsável legal', 'Outro'];
+const [DOC_FICHA, DOC_FOTO, DOC_RESID, DOC_CERTIDAO, DOC_RESP] = TIPOS_DOC;
+const TIPOS_DOC_ANTIGOS = { 'Documento de identidade': DOC_FOTO };
+const SEXOS = ['Feminino', 'Masculino', 'Outro', 'Prefiro não informar'];
+const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'União estável', 'Divorciado(a)', 'Viúvo(a)'];
+const UFS = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
+const fmtCEP = c => { c = digits(c); return c.length === 8 ? `${c.slice(0, 5)}-${c.slice(5)}` : c; };
+const tipoDoc = d => TIPOS_DOC_ANTIGOS[d.tipo] || d.tipo;
+// Documentação obrigatória (igual à regra da API): ficha assinada, comprovante de residência e documento com foto.
+// Menor de idade pode usar certidão de nascimento + documento do responsável no lugar do documento com foto.
+function docStatus(a) {
+  const tem = {}; docsDe(a.id).forEach(d => { tem[tipoDoc(d)] = true; });
+  const menor = ehMenor(a), faltam = [];
+  if (!tem[DOC_FICHA]) faltam.push('ficha de inscrição assinada');
+  if (!tem[DOC_RESID]) faltam.push('comprovante de residência');
+  if (!tem[DOC_FOTO] && !(menor && tem[DOC_CERTIDAO] && tem[DOC_RESP])) faltam.push(menor ? 'documento com foto (ou certidão de nascimento + documento do responsável)' : 'documento com foto (RG, CNH ou CIN)');
+  return { completo: !faltam.length, faltam, tem };
+}
+// Primeiro documento obrigatório que falta (para já vir escolhido ao anexar)
+function proxDoc(a) {
+  const st = docStatus(a);
+  if (!st.tem[DOC_FICHA]) return DOC_FICHA;
+  if (!st.tem[DOC_FOTO] && !(ehMenor(a) && (st.tem[DOC_CERTIDAO] || st.tem[DOC_RESP]))) return DOC_FOTO;
+  if (!st.tem[DOC_RESID]) return DOC_RESID;
+  if (ehMenor(a) && !st.tem[DOC_FOTO]) return st.tem[DOC_CERTIDAO] ? DOC_RESP : DOC_CERTIDAO;
+  return 'Outro';
+}
+const enderecoDe = a => {
+  if (!a.logradouro) return a.endereco || '';
+  const rua = [a.logradouro, a.numero].filter(Boolean).join(', ') + (a.complemento ? ' - ' + a.complemento : '');
+  return [rua, a.bairro, [a.cidade, a.uf].filter(Boolean).join('/'), a.cep ? 'CEP ' + fmtCEP(a.cep) : ''].filter(Boolean).join(', ');
+};
 const docsDe = aid => (S.documentos || []).filter(d => d.assocId === aid && !d.excluido).sort((x, y) => y.enviadoEm.localeCompare(x.enviadoEm));
 const ehMenor = a => !!(a && a.nascimento) && idade(a.nascimento) < 18;
 const FICHA_CSS = `@page{size:A4 portrait;margin:12mm 14mm}
@@ -920,15 +982,15 @@ const FICHA_CSS = `@page{size:A4 portrait;margin:12mm 14mm}
 .foto{width:30mm;height:40mm;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#777;text-align:center;overflow:hidden;justify-self:end}
 .foto img{width:100%;height:100%;object-fit:cover}
 table.fc{width:100%;border-collapse:collapse;table-layout:fixed}
-table.fc td{border:1px solid #9aa4a0;padding:2px 6px 3px;vertical-align:top;height:10.5mm}
-table.fc.top td{height:12.6mm}
+table.fc td{border:1px solid #9aa4a0;padding:2px 6px 3px;vertical-align:top;height:9.5mm}
+table.fc.top td{height:10mm}
 table.fc .l{display:block;font-size:6.8pt;text-transform:uppercase;letter-spacing:.05em;color:#555}
 table.fc .v{font-size:10pt;font-weight:600;overflow-wrap:anywhere}
-.fsec{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2D7A38;margin:10px 0 4px}
-.fdecl{margin:12px 0 6px;text-align:justify}.flocal{margin:12px 0 0}
-.fass{display:grid;grid-template-columns:repeat(auto-fit,minmax(62mm,1fr));gap:14mm;margin-top:20mm;text-align:center;font-size:9pt;break-inside:avoid}
+.fsec{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2D7A38;margin:8px 0 3px}
+.fdecl{margin:10px 0 4px;text-align:justify}.flocal{margin:10px 0 0}
+.fass{display:grid;grid-template-columns:repeat(auto-fit,minmax(62mm,1fr));gap:14mm;margin-top:15mm;text-align:center;font-size:9pt;break-inside:avoid}
 .fass span{display:block;border-top:1px solid #111;padding-top:3px}.fass small{display:block;color:#444}
-.fuso{margin-top:10mm;border:1px dashed #888;padding:6px 8px;font-size:8.5pt;color:#333;display:flex;gap:18px;flex-wrap:wrap}
+.fuso{margin-top:7mm;border:1px dashed #888;padding:6px 8px;font-size:8.5pt;color:#333;display:flex;gap:18px;flex-wrap:wrap}
 .termo p{text-align:justify;margin:0 0 9px}.linha{display:inline-block;min-width:70mm;border-bottom:1px solid #111}`;
 // Monta a ficha (página 1) e o termo de imagem (página 2). Sem associado: ficha em branco para preencher à mão.
 function fichaHTML(a, foto) {
@@ -957,21 +1019,31 @@ function fichaHTML(a, foto) {
     <div class="ft">FICHA DE INSCRIÇÃO DE ASSOCIADO(A)</div>
     <div class="fgrid"><table class="fc top"><tbody>
       <tr>${cel('Nome completo', a && v(a.nome), 2)}</tr>
+      <tr>${cel('Nome social', a && v(a.nomeSocial))}${cel('Sexo', a && v(a.sexo))}</tr>
       <tr>${cel('CPF', a && a.cpf ? fmtCPF(a.cpf) : '')}${cel('RG', a && v(a.rg))}</tr>
-      <tr>${cel('Data de nascimento', a && a.nascimento ? fmtD(a.nascimento) : '')}${cel('Idade', a && a.nascimento ? idade(a.nascimento) + ' anos' : '')}</tr>
+      <tr>${cel('Data de nascimento', a && a.nascimento ? `${fmtD(a.nascimento)} (${idade(a.nascimento)} anos)` : '')}${cel('Naturalidade', a && v(a.naturalidade))}</tr>
     </tbody></table><div class="foto">${foto ? `<img src="data:image/jpeg;base64,${foto}" alt="">` : 'Foto<br>3 × 4'}</div></div>
     <table class="fc" style="margin-top:-1px"><tbody>
-      <tr>${cel('Telefone / WhatsApp', a && v(a.telefone))}${cel('E-mail', a && v(a.email))}</tr>
-      <tr>${cel('Endereço (rua, número, bairro, cidade/UF, CEP)', a && v(a.endereco), 2)}</tr>
+      <tr>${cel('Estado civil', a && v(a.estadoCivil))}${cel('Profissão', a && v(a.profissao))}${cel('Telefone / WhatsApp', a && v(a.telefone))}${cel('E-mail', a && v(a.email))}</tr>
+    </tbody></table>
+    <div class="fsec">Endereço</div>
+    <table class="fc"><tbody>
+      ${a && !a.logradouro && a.endereco ? `<tr>${cel('Endereço completo', v(a.endereco), 4)}</tr>` : `
+      <tr>${cel('Logradouro, número e complemento', a && v([a.logradouro, a.numero].filter(Boolean).join(', ') + (a.complemento ? ' - ' + a.complemento : '')), 3)}${cel('CEP', a && a.cep ? fmtCEP(a.cep) : '')}</tr>
+      <tr>${cel('Bairro', a && v(a.bairro))}${cel('Cidade', a && v(a.cidade), 2)}${cel('UF', a && v(a.uf))}</tr>`}
     </tbody></table>
     <div class="fsec">Associação</div>
     <table class="fc"><tbody>
-      <tr>${cel('Categoria', cat ? esc(cat.nome) : '')}${cel('Mensalidade', cat ? (cat.valor ? fmtBRL(cat.valor) + ' por mês' : 'sem mensalidade') : '')}${cel('Data de ingresso', a ? fmtD(a.dataIngresso) : '')}</tr>
-      <tr>${cel('Funções na casa e cargos', esc(funcoes), 3)}</tr>
+      <tr>${cel('Categoria', cat ? esc(cat.nome) : '')}${cel('Mensalidade', cat ? (cat.valor ? fmtBRL(cat.valor) + ' por mês' : 'sem mensalidade') : '')}${cel('Data de ingresso', a ? fmtD(a.dataIngresso) : '')}${cel('Entrada na corrente', a && a.entradaCorrente ? fmtD(a.entradaCorrente) : '')}</tr>
+      <tr>${cel('Funções na casa e cargos', esc(funcoes), 2)}${cel('Frequenta ou frequentou outro terreiro?', a && v(a.outroTerreiro), 2)}</tr>
+    </tbody></table>
+    <div class="fsec">Contato de emergência e saúde</div>
+    <table class="fc"><tbody>
+      <tr>${cel('Contato de emergência', a && v(a.emergNome), 2)}${cel('Parentesco', a && v(a.emergParentesco))}${cel('Telefone', a && v(a.emergTelefone))}</tr>
+      <tr>${cel('Alergias, condições de saúde e medicamentos', a && v(a.saudeObs), 4)}</tr>
     </tbody></table>
     ${menor ? `<div class="fsec">Responsável legal ${branco ? '(preencher se o associado for menor de 18 anos)' : '(associado menor de 18 anos)'}</div>
-    <table class="fc"><tbody><tr>${cel('Nome do responsável', a && v(a.responsavelNome), 2)}${cel('Parentesco', a && v(a.responsavelParentesco))}</tr>
-      <tr>${cel('CPF do responsável', a && a.responsavelCpf ? fmtCPF(a.responsavelCpf) : '')}${cel('Telefone do responsável', '', 2)}</tr></tbody></table>` : ''}
+    <table class="fc"><tbody><tr>${cel('Nome do responsável', a && v(a.responsavelNome), 2)}${cel('CPF do responsável', a && a.responsavelCpf ? fmtCPF(a.responsavelCpf) : '')}${cel('Parentesco', a && v(a.responsavelParentesco))}</tr></tbody></table>` : ''}
     <div class="fdecl">${tpl(cfg.fichaDeclaracao, { identificacao: '', imagem: '' })}</div>
     <div class="flocal">${local}</div>
     ${assHtml(assinantes)}
@@ -998,13 +1070,16 @@ function mostrarArquivo(r, titulo) {
     ${/^image\//.test(r.mime) ? `<img class="comp-img" src="${url}" alt="${esc(titulo)}">` : `<div class="note"><span>${ic('file')} Arquivo PDF. Use os botões abaixo para abrir ou baixar.</span></div>`}
     <div class="modal-actions"><a class="btn" href="${url}" download="${esc(r.nome || 'arquivo')}">${ic('download')} Baixar</a><a class="btn" href="${url}" target="_blank" rel="noopener">Abrir em outra aba</a><button class="btn primary" data-act="close">Fechar</button></div>`, 'modal-wide');
 }
+const listaE = l => l.length > 1 ? l.slice(0, -1).join(', ') + ' e ' + l[l.length - 1] : l[0] || '';
 function docsPainel(a) {
-  const docs = docsDe(a.id);
+  const docs = docsDe(a.id), st = docStatus(a);
   return `<section class="panel"><div class="panel-head"><h2>Ficha de inscrição e documentos</h2>
       <div class="toolbar"><button class="btn sm" data-act="fichaImprimir" data-id="${a.id}">${ic('print')} Imprimir ficha e termo</button><button class="btn sm primary" data-act="docAnexar" data-id="${a.id}">${ic('clip')} Anexar documento</button></div></div>
-    ${a.fichaEm ? `<div class="note ok"><span><b>Ficha de inscrição e termo de imagem assinados</b> · entregue em ${fmtD(a.fichaEm)}</span></div>`
-      : `<div class="note warn"><span><b>Ficha de inscrição pendente.</b> Imprima a ficha e o termo de uso de imagem, colha as assinaturas${ehMenor(a) ? ' (do responsável legal e do associado)' : ''}, escaneie ou fotografe e anexe aqui como "Ficha de inscrição assinada".</span></div>`}
-    ${docs.length ? `<div class="list">${docs.map(d => `<div class="row-item"><span class="who"><b>${esc(d.tipo)}</b><span class="small muted">${esc(d.nome)} · ${fmtStamp(d.enviadoEm)} · ${esc(d.enviadoPor)}${d.obs ? ` · ${esc(d.obs)}` : ''}</span></span>
+    ${st.completo ? `<div class="note ok"><span><b>Documentação completa.</b> Ficha e termo de imagem assinados${a.fichaEm ? ` (entregues em ${fmtD(a.fichaEm)})` : ''}, documento com foto e comprovante de residência.</span></div>`
+      : `<div class="note warn"><span><b>Documentação incompleta</b>: falta ${esc(listaE(st.faltam))}. A carteirinha só é emitida com os documentos anexados.${st.tem[DOC_FICHA] ? '' : ` Imprima a ficha e o termo de uso de imagem, colha as assinaturas${ehMenor(a) ? ' (do responsável legal e do associado)' : ''}, escaneie ou fotografe e anexe como "Ficha de inscrição assinada".`}</span></div>`}
+    <ul class="doc-check">${[[DOC_FICHA, 'Ficha de inscrição e termo assinados'], ...(ehMenor(a) ? [[DOC_FOTO, 'Documento com foto (RG, CNH ou CIN) — ou certidão de nascimento + documento do responsável', !!(st.tem[DOC_FOTO] || (st.tem[DOC_CERTIDAO] && st.tem[DOC_RESP]))]] : [[DOC_FOTO, 'Documento com foto (RG, CNH ou CIN)']]), [DOC_RESID, 'Comprovante de residência']]
+      .map(([tp, rot, ok]) => { ok = ok === undefined ? !!st.tem[tp] : ok; return `<li class="${ok ? 'ok' : 'falta'}">${ic(ok ? 'check' : 'x')} ${rot}</li>`; }).join('')}</ul>
+    ${docs.length ? `<div class="list">${docs.map(d => `<div class="row-item"><span class="who"><b>${esc(tipoDoc(d))}</b><span class="small muted">${esc(d.nome)} · ${fmtStamp(d.enviadoEm)} · ${esc(d.enviadoPor)}${d.obs ? ` · ${esc(d.obs)}` : ''}</span></span>
       <span class="row-actions"><button class="btn sm" data-act="docVer" data-id="${d.id}">${ic('file')} Abrir</button>${isAdmin() ? `<button class="btn sm ghost icon" data-act="docExcluir" data-id="${d.id}" aria-label="Excluir documento" title="Excluir documento">${ic('x')}</button>` : ''}</span></div>`).join('')}</div>`
       : '<p class="small muted">Nenhum documento anexado.</p>'}
   </section>`;
@@ -1165,8 +1240,8 @@ const validadePrevista = () => { const d = new Date(); return S.config.validadeM
 /* ---- Relatórios e planilha ---- */
 function csvCampo(v) { v = String(v ?? ''); return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
 function exportarCsv(list) {
-  const cab = ['Matrícula', 'Nome', 'CPF', 'RG', 'Nascimento', 'Telefone', 'E-mail', 'Endereço', 'Categoria', 'Situação', 'Ingresso', 'Funções na carteirinha', 'Outras funções', 'Carteirinha válida até', 'Meses em atraso'];
-  const linhas = list.map(a => { const c = carteirinhaAtiva(a.id), f = financeiro(a), pr = funcaoPrincipal(a.id); return [fmtMat(a.matricula), a.nome, isAdmin() ? fmtCPF(a.cpf) : maskCPF(a.cpf), a.rg, fmtD(a.nascimento).replace('—', ''), a.telefone, a.email, a.endereco, catNome(a.categoriaId), a.situacao, fmtD(a.dataIngresso), pr, funcoesAtuais(a.id).filter(x => !principaisAtuais(a.id).includes(x)).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).join(', '), c ? fmtD(c.validade) : '', f.atraso || '']; });
+  const cab = ['Matrícula', 'Nome', 'Nome social', 'CPF', 'RG', 'Nascimento', 'Sexo', 'Estado civil', 'Profissão', 'Naturalidade', 'Telefone', 'E-mail', 'Endereço', 'CEP', 'Bairro', 'Cidade', 'UF', 'Contato de emergência', 'Telefone de emergência', 'Categoria', 'Situação', 'Ingresso', 'Entrada na corrente', 'Funções na carteirinha', 'Outras funções', 'Carteirinha válida até', 'Meses em atraso', 'Documentação'];
+  const linhas = list.map(a => { const c = carteirinhaAtiva(a.id), f = financeiro(a), pr = funcaoPrincipal(a.id); const st = docStatus(a); return [fmtMat(a.matricula), a.nome, a.nomeSocial, isAdmin() ? fmtCPF(a.cpf) : maskCPF(a.cpf), a.rg, fmtD(a.nascimento).replace('—', ''), a.sexo, a.estadoCivil, a.profissao, a.naturalidade, a.telefone, a.email, enderecoDe(a), a.cep ? fmtCEP(a.cep) : '', a.bairro, a.cidade, a.uf, [a.emergNome, a.emergParentesco ? `(${a.emergParentesco})` : ''].filter(Boolean).join(' '), a.emergTelefone, catNome(a.categoriaId), a.situacao, fmtD(a.dataIngresso), a.entradaCorrente ? fmtD(a.entradaCorrente) : '', pr, funcoesAtuais(a.id).filter(x => !principaisAtuais(a.id).includes(x)).map(x => (funcao(x.funcaoId) || {}).nome).filter(Boolean).join(', '), c ? fmtD(c.validade) : '', f.atraso || '', st.completo ? 'Completa' : 'Falta: ' + st.faltam.join(', ')]; });
   const txt = '﻿' + [cab, ...linhas].map(r => r.map(csvCampo).join(';')).join('\r\n');
   baixar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), `associados-${TODAY()}.csv`);
 }
@@ -1315,19 +1390,22 @@ const ACT = {
 
   /* Carteirinhas */
   cartEmitir(t) {
-    const a = assoc(t.dataset.id), fin = financeiro(a), atual = carteirinhaAtiva(a.id), val = validadePrevista();
-    if (fin.bloqueia && !isAdmin()) {
-      openModal(`<h2>Mensalidades em atraso</h2><div class="note bad"><b>${esc(a.nome)} tem ${plural(fin.atraso, 'mês', 'meses')} em atraso</b><span>${fin.atrasadas.map(fmtComp).join(', ')}. A tolerância é de ${plural(S.config.toleranciaMeses, 'mês', 'meses')}.</span></div>
-        <p class="small muted">Registre os pagamentos para liberar a carteirinha, ou peça a um administrador para liberar mesmo assim.</p>
-        <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn primary" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button></div>`);
+    const a = assoc(t.dataset.id), fin = financeiro(a), atual = carteirinhaAtiva(a.id), val = validadePrevista(), docs = docStatus(a);
+    const bloq = fin.bloqueia || !docs.completo;
+    const avisoFin = fin.bloqueia ? `<div class="note bad"><b>${plural(fin.atraso, 'mês', 'meses')} em atraso</b><span>${fin.atrasadas.map(fmtComp).join(', ')}. A tolerância é de ${plural(S.config.toleranciaMeses, 'mês', 'meses')}.</span></div>` : '';
+    const avisoDocs = docs.completo ? '' : `<div class="note bad"><b>Documentação incompleta</b><span>Falta anexar: ${esc(listaE(docs.faltam))}.</span></div>`;
+    if (bloq && !isAdmin()) {
+      openModal(`<h2>Carteirinha bloqueada</h2><p class="muted">${esc(a.nome)}</p>${avisoDocs}${avisoFin}
+        <p class="small muted">${[docs.completo ? '' : 'Anexe os documentos que faltam', fin.bloqueia ? 'registre os pagamentos' : ''].filter(Boolean).join(' e ')} para liberar a carteirinha, ou peça a um administrador para liberar mesmo assim.</p>
+        <div class="modal-actions"><button class="btn" data-act="close">Voltar</button>${fin.bloqueia ? `<button class="btn${docs.completo ? ' primary' : ''}" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button>` : ''}${docs.completo ? '' : `<button class="btn primary" data-act="docAnexar" data-id="${a.id}">${ic('clip')} Anexar documento</button>`}</div>`);
       return;
     }
     openModal(`<h2>${atual ? 'Renovar carteirinha' : 'Emitir carteirinha'}</h2>
       <dl class="facts"><div><dt>Associado</dt><dd>${esc(a.nome)}</dd></div><div><dt>Válida até</dt><dd><b>${fmtD(val)}</b></dd></div><div><dt>Função na carteirinha</dt><dd>${esc(funcaoPrincipal(a.id) || '—')}</dd></div><div><dt>Foto</dt><dd>${a.fotoMini ? 'cadastrada' : '<span style="color:var(--warn)">sem foto</span>'}</dd></div></dl>
       ${atual ? '<div class="note warn"><span>A carteirinha atual será substituída: o QR Code e o link pessoal antigos deixam de valer.</span></div>' : ''}
-      ${fin.bloqueia ? `<div class="note bad"><b>${plural(fin.atraso, 'mês', 'meses')} em atraso (${fin.atrasadas.map(fmtComp).join(', ')})</b><span>Acima da tolerância. Como administrador, você pode liberar informando o motivo.</span></div>
-        <div class="field"><label for="m-just">Motivo da liberação</label><input id="m-just" maxlength="300" placeholder="Ex.: acordo de pagamento"></div>` : ''}
-      <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="cartEmitirOk" data-id="${a.id}" data-lib="${fin.bloqueia ? 1 : ''}">${fin.bloqueia ? 'Liberar e emitir' : atual ? 'Renovar' : 'Emitir'}</button></div>`);
+      ${bloq ? `${avisoDocs}${avisoFin}<p class="small muted">Como administrador, você pode liberar informando o motivo. A liberação fica registrada no histórico.</p>
+        <div class="field"><label for="m-just">Motivo da liberação</label><input id="m-just" maxlength="300" placeholder="${fin.bloqueia ? 'Ex.: acordo de pagamento' : 'Ex.: documentos serão entregues na próxima gira'}"></div>` : ''}
+      <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="cartEmitirOk" data-id="${a.id}" data-lib="${bloq ? 1 : ''}">${bloq ? 'Liberar e emitir' : atual ? 'Renovar' : 'Emitir'}</button></div>`);
   },
   cartEmitirOk(t) {
     run(async () => {
@@ -1380,13 +1458,14 @@ const ACT = {
   cartLote(t) { const cards = [...UI.sel].map(id => carteirinhaAtiva(id)).filter(Boolean).sort((a, b) => assoc(a.assocId).nome.localeCompare(assoc(b.assocId).nome, 'pt-BR')); run(() => imprimirCartoes(cards, t.dataset.modo)); },
   cartEmitirLote() {
     const sel = [...UI.sel].map(assoc).filter(a => a && a.situacao === 'Ativo');
-    const bloq = sel.filter(a => financeiro(a).bloqueia), ok = sel.filter(a => !financeiro(a).bloqueia);
+    const bloq = sel.filter(a => financeiro(a).bloqueia), semDocs = sel.filter(a => !financeiro(a).bloqueia && !docStatus(a).completo), ok = sel.filter(a => !financeiro(a).bloqueia && docStatus(a).completo);
     openModal(`<h2>Emitir ou renovar carteirinhas</h2><p>${plural(ok.length, 'carteirinha será emitida', 'carteirinhas serão emitidas')}, válidas até <b>${fmtD(validadePrevista())}</b>. As atuais são substituídas.</p>
       ${bloq.length ? `<div class="note warn"><b>${plural(bloq.length, 'associado fica de fora', 'associados ficam de fora')} por mensalidades em atraso</b><span>${bloq.map(a => esc(a.nome)).join(', ')}. Emita individualmente${isAdmin() ? ', informando o motivo da liberação' : ' depois de registrar os pagamentos'}.</span></div>` : ''}
+      ${semDocs.length ? `<div class="note warn"><b>${plural(semDocs.length, 'associado fica de fora', 'associados ficam de fora')} por documentação incompleta</b><span>${semDocs.map(a => esc(a.nome)).join(', ')}. Anexe os documentos no cadastro${isAdmin() ? ' ou emita individualmente, informando o motivo da liberação' : ''}.</span></div>` : ''}
       <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="cartEmitirLoteOk" ${ok.length ? '' : 'disabled'}>Emitir ${ok.length}</button></div>`);
   },
   cartEmitirLoteOk() {
-    const lista = [...UI.sel].map(assoc).filter(a => a && a.situacao === 'Ativo' && !financeiro(a).bloqueia);
+    const lista = [...UI.sel].map(assoc).filter(a => a && a.situacao === 'Ativo' && !financeiro(a).bloqueia && docStatus(a).completo);
     closeModal();
     run(async () => {
       let n = 0;
@@ -1654,13 +1733,13 @@ Object.assign(ACT, {
   fichaOferta(id) {
     const a = assoc(id); if (!a) return;
     openModal(`<h2>Associado cadastrado</h2><p class="muted">${esc(a.nome)} · matrícula ${fmtMat(a.matricula)}</p>
-      <p>Imprima agora a <b>ficha de inscrição</b> e o <b>termo de uso de imagem</b> para ${ehMenor(a) ? 'o responsável legal e o associado assinarem' : 'o associado assinar'}. Depois, anexe a ficha assinada no cadastro.</p>
+      <p>Imprima agora a <b>ficha de inscrição</b> e o <b>termo de uso de imagem</b> para ${ehMenor(a) ? 'o responsável legal e o associado assinarem' : 'o associado assinar'}. Depois, anexe no cadastro a ficha assinada, um documento com foto (RG, CNH ou CIN) e um comprovante de residência: sem eles a carteirinha não é emitida.</p>
       <div class="modal-actions"><button class="btn" data-act="close">Depois</button><button class="btn primary" data-act="fichaImprimir" data-id="${a.id}">${ic('print')} Imprimir ficha e termo</button></div>`);
   },
   docAnexar(t) {
     const a = assoc(t.dataset.id);
     openModal(`<h2>Anexar documento</h2><p class="muted">${esc(a.nome)} · matrícula ${fmtMat(a.matricula)}</p>
-      <div class="field"><label for="d-tipo">Tipo</label><select id="d-tipo">${TIPOS_DOC.map(tp => `<option ${(!a.fichaEm && tp === TIPOS_DOC[0]) ? 'selected' : ''}>${tp}</option>`).join('')}</select></div>
+      <div class="field"><label for="d-tipo">Tipo</label><select id="d-tipo">${TIPOS_DOC.map(tp => `<option ${tp === proxDoc(a) ? 'selected' : ''}>${tp}</option>`).join('')}</select><span class="hint">Obrigatórios para a carteirinha: ficha assinada, documento com foto e comprovante de residência${ehMenor(a) ? ' (menor: pode ser certidão de nascimento + documento do responsável no lugar do documento com foto)' : ''}.</span></div>
       <div class="field"><label for="d-arq">Arquivo (foto ou PDF escaneado)</label><input id="d-arq" type="file" accept="image/*,application/pdf"><span class="hint">No celular, dá para fotografar a folha direto pela câmera. Fotos são reduzidas automaticamente; PDF até 6 MB.</span></div>
       <div class="field"><label for="d-obs">Observação</label><input id="d-obs" maxlength="300" placeholder="Opcional"></div>
       <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="docAnexarOk" data-id="${a.id}">Anexar</button></div>`);
@@ -1671,18 +1750,18 @@ Object.assign(ACT, {
     run(async () => {
       const prep = await prepComprovante(f, 2400, 0.85);
       await api('doc.enviar', { assocId: t.dataset.id, tipo, obs, ...prep }, { msg: 'Enviando documento…' });
-      closeModal(); render(); toast(tipo === TIPOS_DOC[0] ? 'Ficha assinada anexada' : 'Documento anexado');
+      closeModal(); render(); const a = assoc(t.dataset.id); toast((tipo === DOC_FICHA ? 'Ficha assinada anexada' : 'Documento anexado') + (a && docStatus(a).completo ? ' · documentação completa' : ''));
     });
   },
   docVer(t) {
     const d = (S.documentos || []).find(x => x.id === t.dataset.id);
-    run(async () => { const r = await api('doc.obter', { id: t.dataset.id }, { msg: 'Abrindo documento…' }); mostrarArquivo(r, d ? d.tipo : 'Documento'); });
+    run(async () => { const r = await api('doc.obter', { id: t.dataset.id }, { msg: 'Abrindo documento…' }); mostrarArquivo(r, d ? tipoDoc(d) : 'Documento'); });
   },
   docExcluir(t) {
     const d = (S.documentos || []).find(x => x.id === t.dataset.id);
-    openModal(`<h2>Excluir documento</h2><p class="muted">${esc(d.tipo)} · ${esc(d.nome)}</p>
+    openModal(`<h2>Excluir documento</h2><p class="muted">${esc(tipoDoc(d))} · ${esc(d.nome)}</p>
       <div class="field"><label for="d-mot">Motivo</label><input id="d-mot" maxlength="300" placeholder="Ex.: arquivo errado, ilegível"></div>
-      <p class="small muted">O arquivo vai para a lixeira do Drive e o registro fica no histórico.${d.tipo === TIPOS_DOC[0] ? ' Se não houver outra ficha assinada, o cadastro volta a ficar com a ficha pendente.' : ''}</p>
+      <p class="small muted">O arquivo vai para a lixeira do Drive e o registro fica no histórico.${[DOC_FICHA, DOC_FOTO, DOC_RESID, DOC_CERTIDAO, DOC_RESP].includes(tipoDoc(d)) ? ' Se não houver outro documento deste tipo, a documentação volta a ficar incompleta e a carteirinha fica bloqueada.' : ''}</p>
       <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn danger" data-act="docExcluirOk" data-id="${d.id}">Excluir</button></div>`);
   },
   docExcluirOk(t) { run(async () => { await api('doc.excluir', { id: t.dataset.id, motivo: $('#d-mot').value }); closeModal(); render(); toast('Documento excluído'); }); },
@@ -1690,6 +1769,18 @@ Object.assign(ACT, {
 
 /* ============ Formulários ============ */
 function fieldErr(id, msg) { const m = $('#m-' + id); if (m) m.textContent = msg || ''; const f = m && m.closest('.field'); if (f) f.classList.toggle('err', !!msg); return !msg; }
+// Preenche o endereço pelo CEP (ViaCEP; se falhar, BrasilAPI). Não apaga o que já foi digitado se o CEP não for encontrado.
+async function buscarCep(cep) {
+  const h = $('#m-cep-h'); if (h) h.textContent = 'Buscando o CEP…';
+  const pega = async (url, conv) => { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000); try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) return null; const j = await r.json(); return j && !j.erro ? conv(j) : null; } catch (e) { return null; } finally { clearTimeout(t); } };
+  const e = await pega(`https://viacep.com.br/ws/${cep}/json/`, j => ({ logradouro: j.logradouro, bairro: j.bairro, cidade: j.localidade, uf: j.uf }))
+    || await pega(`https://brasilapi.com.br/api/cep/v1/${cep}`, j => ({ logradouro: j.street, bairro: j.neighborhood, cidade: j.city, uf: j.state }));
+  if (digits($('#f-cep')?.value || '') !== cep) return; // o CEP mudou enquanto buscava
+  if (!e) { if (h) h.textContent = 'Digite o CEP para preencher a rua, o bairro e a cidade.'; fieldErr('cep', 'CEP não encontrado. Preencha o endereço à mão.'); return; }
+  [['logr', e.logradouro], ['bairro', e.bairro], ['cid', e.cidade], ['uf', e.uf]].forEach(([id, x]) => { const el = $('#f-' + id); if (el && x) el.value = x; });
+  if (h) h.textContent = 'Endereço preenchido pelo CEP. Confira e informe o número.';
+  const n = $('#f-num'); if (n && !n.value) n.focus();
+}
 const FORM = {
   assoc() {
     const ed = !!P.id; const val = id => ($('#f-' + id)?.value || '').trim();
@@ -1703,8 +1794,13 @@ const FORM = {
     const menor = !!val('nasc') && idade(val('nasc')) < 18;
     ok = fieldErr('rnome', !menor || val('rnome').length >= 3 ? '' : 'Informe o responsável legal (menor de 18 anos).') && ok;
     ok = fieldErr('rcpf', !val('rcpf') || cpfValido(val('rcpf')) ? '' : 'CPF inválido.') && ok;
+    ok = fieldErr('cep', !val('cep') || digits(val('cep')).length === 8 ? '' : 'CEP com 8 números.') && ok;
+    ok = fieldErr('corr', !val('corr') || val('corr') <= TODAY() ? '' : 'Data no futuro.') && ok;
     if (!ok) { $('.field.err input, .field.err select')?.focus(); return; }
-    const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: val('end'), categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs'), responsavelNome: val('rnome'), responsavelCpf: digits(val('rcpf')), responsavelParentesco: val('rpar') };
+    const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: P.id && !val('logr') ? (assoc(P.id) || {}).endereco || '' : '', categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs'), responsavelNome: val('rnome'), responsavelCpf: digits(val('rcpf')), responsavelParentesco: val('rpar'),
+      nomeSocial: val('nsoc'), sexo: val('sexo'), estadoCivil: val('civil'), profissao: val('prof'), naturalidade: val('nat'),
+      cep: digits(val('cep')), logradouro: val('logr'), numero: val('num'), complemento: val('comp'), bairro: val('bairro'), cidade: val('cid'), uf: val('uf'),
+      emergNome: val('enome'), emergParentesco: val('epar'), emergTelefone: val('etel'), entradaCorrente: val('corr'), outroTerreiro: val('terr'), saudeObs: val('saude') };
     if (ed) { p.id = P.id; if ($('#f-mat')) p.matricula = val('mat'); }
     else if (val('mat')) p.matricula = val('mat');
     const foto = UI.foto, funs = ed ? [] : [val('funC'), val('funA')].filter(Boolean);
@@ -1777,11 +1873,16 @@ const CHG = {
   },
 };
 Object.assign(INP, {
+  cepForm(el) {
+    const d = digits(el.value).slice(0, 8); el.value = d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d;
+    fieldErr('cep', '');
+    if (d.length === 8 && UI.cepUlt !== d) { UI.cepUlt = d; buscarCep(d); }
+  },
   cpfResp(el) { el.value = typeCPF(el.value); const d = digits(el.value); fieldErr('rcpf', d.length === 11 && !cpfValido(d) ? 'CPF inválido.' : ''); },
   finQ(el) { P.q = el.value; $('#fin-res').innerHTML = finResults(); },
 });
 Object.assign(CHG, {
-  asFicha(el) { P.ficha = el.value; $('#as-res').innerHTML = assocResults(); },
+  asDocs(el) { P.docs = el.value; $('#as-res').innerHTML = assocResults(); },
   nascForm(el) { const box = $('#f-resp-box'); if (box) box.hidden = !(el.value && idade(el.value) < 18) && !($('#f-rnome') && $('#f-rnome').value); },
   finDe(el) { if (el.value) { P.de = el.value; $('#fin-res').innerHTML = finResults(); } },
   finAte(el) { if (el.value) { P.ate = el.value; $('#fin-res').innerHTML = finResults(); } },
