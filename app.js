@@ -179,6 +179,9 @@ function sessionExpired(msg) { setToken(''); S = null; UI.login = 'start'; UI.lo
 
 /* ============ Consultas ============ */
 const isAdmin = () => S && S.session && S.session.perfil === 'Admin';
+// Módulos opcionais (modulos.js preenche MOD); desligados em Configurações, somem das telas
+const MOD = {};
+const modOn = m => !!(S && S.config && S.config.modulos && S.config.modulos[m]);
 const firstName = () => (S.session.nome || S.session.email).split(' ')[0];
 const assoc = id => S.associados.find(a => a.id === id);
 const categoria = id => S.categorias.find(c => c.id === id);
@@ -304,6 +307,12 @@ const NAV = [
   { id: 'mensalidades', label: 'Mensalidades', ic: 'coin', badge: () => kpis().inadimplentes.length },
   { id: 'carteirinhas', label: 'Carteirinhas', ic: 'card', badge: () => kpis().vencidas.length },
   { id: 'funcoes', label: 'Funções', ic: 'star' },
+  { id: 'cobranca', label: 'Cobrança', ic: 'send', mod: 'cobranca' },
+  { id: 'agenda', label: 'Agenda', ic: 'calendar', mod: 'agenda' },
+  { id: 'assembleias', label: 'Assembleias', ic: 'vote', mod: 'assembleias' },
+  { id: 'campanhas', label: 'Campanhas', ic: 'gift', mod: 'campanhas' },
+  { id: 'estoque', label: 'Estoque', ic: 'box', mod: 'estoque' },
+  { id: 'livro', label: 'Livro de registro', ic: 'book', mod: 'livro' },
   { sec: 'Tesouraria', fin: true },
   { id: 'financeiro', label: 'Financeiro', ic: 'wallet', fin: true, badge: () => finAlertas().vencidas.length },
   { sec: 'Administração', admin: true },
@@ -327,13 +336,13 @@ function render() {
   if (!configurado()) { app.innerHTML = vSetup(); return; }
   if (!S) { app.innerHTML = UI.login === 'denied' ? vDenied() : vLogin(); if (UI.login === 'start') renderGoogleButton(); return; }
   let v = VIEWS[VIEW];
-  if (!v || (v.admin && !isAdmin()) || (v.fin && !canFin())) { VIEW = 'inicio'; v = VIEWS.inicio; }
+  if (!v || (v.admin && !isAdmin()) || (v.fin && !canFin()) || (v.mod && !modOn(v.mod))) { VIEW = 'inicio'; v = VIEWS.inicio; }
   app.innerHTML = shell(v.render());
   if (v.after) v.after();
 }
 function shell(content) {
   const cur = PARENT[VIEW] || VIEW;
-  const nav = NAV.filter(n => (!n.admin || isAdmin()) && (!n.fin || canFin())).map(n => n.sec ? `<div class="nav-sec">${n.sec}</div>` :
+  const nav = NAV.filter(n => (!n.admin || isAdmin()) && (!n.fin || canFin()) && (!n.mod || modOn(n.mod))).map(n => n.sec ? `<div class="nav-sec">${n.sec}</div>` :
     `<button data-act="go" data-v="${n.id}" ${cur === n.id ? 'aria-current="page"' : ''}>${ic(n.ic)}<span>${n.label}</span>${n.badge && n.badge() ? `<span class="count">${n.badge()}</span>` : ''}</button>`).join('');
   const k = kpis();
   const bn = (id, label, icn, extra = '') => `<button data-act="go" data-v="${id}" ${cur === id ? 'aria-current="page"' : ''}>${ic(icn)}<span>${label}</span>${extra}</button>`;
@@ -354,11 +363,12 @@ function shell(content) {
     ${bn('associados', 'Associados', 'users')}
     <button class="main-act" data-act="go" data-v="associadoForm" ${VIEW === 'associadoForm' && !P.id ? 'aria-current="page"' : ''}><span class="ic">${ic('plus')}</span><span>Novo</span></button>
     ${bn('mensalidades', 'Mensalidades', 'coin', k.inadimplentes.length ? `<span class="dot">${k.inadimplentes.length}</span>` : '')}
-    <button data-act="menu" ${['carteirinhas', 'funcoes', 'financeiro', 'configuracoes', 'operadores', 'atividades'].includes(cur) ? 'aria-current="page"' : ''}>${ic('more')}<span>Mais</span>${k.vencidas.length ? `<span class="dot">${k.vencidas.length}</span>` : ''}</button>
+    <button data-act="menu" ${['carteirinhas', 'funcoes', 'financeiro', 'configuracoes', 'operadores', 'atividades', 'cobranca', 'agenda', 'assembleias', 'campanhas', 'estoque', 'livro'].includes(cur) ? 'aria-current="page"' : ''}>${ic('more')}<span>Mais</span>${k.vencidas.length ? `<span class="dot">${k.vencidas.length}</span>` : ''}</button>
   </nav>
   ${UI.menu ? `<div class="overlay" data-act="menuClose" style="place-items:end stretch;padding:0"></div><div class="sheet-menu" role="menu">
     <button data-act="go" data-v="carteirinhas">${ic('card')} Carteirinhas${k.vencidas.length ? ` (${k.vencidas.length} vencidas)` : ''}</button>
     <button data-act="go" data-v="funcoes">${ic('star')} Funções</button>
+    ${MOD.menuMais ? MOD.menuMais() : ''}
     ${canFin() ? `<button data-act="go" data-v="financeiro">${ic('wallet')} Financeiro${finAlertas().vencidas.length ? ` (${finAlertas().vencidas.length} contas vencidas)` : ''}</button>` : ''}
     ${isAdmin() ? `<button data-act="go" data-v="configuracoes">${ic('gear')} Configurações</button>
     <button data-act="go" data-v="operadores">${ic('shield')} Operadores</button>
@@ -424,6 +434,7 @@ VIEWS.inicio = {
       ${kpiBox('Carteirinhas vencidas', k.vencidas.length, k.vencendo.length ? `${k.vencendo.length} vencem em até 30 dias` : 'nenhuma vencendo em 30 dias', k.vencidas.length ? 'bad' : k.vencendo.length ? 'warn' : '', 'data-act="go" data-v="carteirinhas" data-f="vencidas"')}
       ${kpiBox('Sem carteirinha', k.semCart.length, 'associados ativos', '', 'data-act="go" data-v="carteirinhas" data-f="sem"')}
       ${k.isencoes.length ? (rv => kpiBox('Isentos de mensalidade', k.isencoes.length, rv ? `${plural(rv, 'isenção termina', 'isenções terminam')} até ${fmtComp(addMonthsComp(COMP_ATUAL(), 1))}` : 'desemprego, doença e outros', rv ? 'warn' : '', 'data-act="go" data-v="mensalidades" data-f="isencao"'))(k.isencoes.filter(x => isencaoRevisar(x.f.isencao)).length) : ''}
+      ${MOD.kpis ? MOD.kpis() : ''}
       ${(n => kpiBox('Documentação incompleta', n, n ? 'ativos sem todos os documentos' : 'todos os ativos com documentos', n ? 'warn' : '', 'data-act="go" data-v="associados" data-docs="incompleta"'))(S.associados.filter(a => a.situacao === 'Ativo' && !docStatus(a).completo).length)}
       ${canFin() ? (al => kpiBox('Saldo em caixa e bancos', fmtBRL(saldoTotal()), al.vencidas.length ? `${plural(al.vencidas.length, 'conta vencida', 'contas vencidas')} a pagar` : al.semana.length ? `${plural(al.semana.length, 'conta vence', 'contas vencem')} em 7 dias` : 'nenhuma conta vencida', al.vencidas.length ? 'money bad' : al.semana.length ? 'money warn' : 'money', `data-act="go" data-v="financeiro" ${al.vencidas.length || al.semana.length ? 'data-tab="pagar"' : ''}`))(finAlertas()) : ''}
     </div>
@@ -532,8 +543,9 @@ VIEWS.associado = {
           <p class="small muted">Atribua quantas funções precisar: da casa e administrativas. Na carteirinha aparecem a função principal da casa e o cargo administrativo principal (ex.: Dirigente espiritual · Presidente).</p></section>
       </div>
       ${docsPainel(a)}
+      ${MOD.painelAssoc ? MOD.painelAssoc(a) : ''}
       <section class="panel"><div class="panel-head"><h2>Mensalidades</h2>
-        <div class="toolbar">${anos.length > 1 ? `<select data-ch="assocAno" aria-label="Ano">${anos.map(y => `<option ${y === ano ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}<button class="btn sm primary" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button></div></div>
+        <div class="toolbar">${anos.length > 1 ? `<select data-ch="assocAno" aria-label="Ano">${anos.map(y => `<option ${y === ano ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}${MOD.botoesMens ? MOD.botoesMens(a, fin) : ''}<button class="btn sm primary" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button></div></div>
         ${fin.cobrado ? `<p class="small muted">${esc(catNome(a.categoriaId))}: ${fmtBRL(fin.valor)} por mês, cobrado desde ${fmtComp(fin.inicio)}. ${fin.atraso ? `<b style="color:var(--bad)">${plural(fin.atraso, 'mês', 'meses')} em atraso: ${fin.atrasadas.map(fmtComp).join(', ')}</b>.` : 'Nenhum mês em atraso.'}</p>`
         : `<p class="small muted">${a.situacao === 'Ativo' ? `Categoria ${esc(catNome(a.categoriaId))} sem valor de mensalidade.` : `Associado ${a.situacao.toLowerCase()}: mensalidades não são cobradas.`}</p>`}
         ${isencaoPainel(a, fin)}
@@ -678,7 +690,7 @@ VIEWS.mensalidades = {
     const esperado = devidos.reduce((s, x) => s + x.fin.valor, 0);
     const tab = (id, label, n) => `<button class="tab ${f === id ? 'on' : ''}" data-act="mensF" data-f="${id}">${label}${n != null ? ` <span class="count">${n}</span>` : ''}</button>`;
     return `<div class="page-head"><div><h1>Mensalidades</h1><p class="sub">Tolerância para emitir carteirinha: ${plural(S.config.toleranciaMeses, 'mês', 'meses')} em atraso. Cobrança desde ${fmtComp(S.config.cobrancaDesde)}.</p></div>
-      <div class="toolbar"><button class="btn sm" data-act="printMens">${ic('print')} Imprimir</button><button class="btn primary" data-act="pagNovo">${ic('coin')} Registrar pagamento</button></div></div>
+      <div class="toolbar">${modOn('cobranca') ? `<button class="btn sm" data-act="go" data-v="cobranca">${ic('send')} Cobrança</button>` : ''}<button class="btn sm" data-act="printMens">${ic('print')} Imprimir</button><button class="btn primary" data-act="pagNovo">${ic('coin')} Registrar pagamento</button></div></div>
       <div class="toolbar"><div class="field" style="flex:0 1 190px"><label for="m-mes">Mês</label><input id="m-mes" type="month" value="${mes}" data-ch="mensMes"></div>
         <label class="search" style="align-self:end"><span class="sr">Buscar</span>${ic('search')}<input id="m-q" data-in="mensQ" value="${esc(P.q || '')}" placeholder="Nome ou matrícula" autocomplete="off"></label></div>
       <div class="kpis">
@@ -762,6 +774,7 @@ VIEWS.configuracoes = {
           <td data-label="Ativos" class="num">${S.associados.filter(x => x.categoriaId === k.id && x.situacao === 'Ativo').length}</td><td data-label="Situação">${pill(k.ativa ? 'Ativa' : 'Inativa', k.ativa ? 'ok' : 'mute')}</td>
           <td class="actions"><button class="btn sm" data-act="catEditar" data-id="${k.id}">${ic('edit')} Editar</button></td></tr>`).join('')}
         </tbody></table></div></section>
+      ${MOD.configHTML ? MOD.configHTML() : ''}
       <form class="panel form" data-form="config" novalidate>
         <fieldset><legend>Mensalidades</legend><div class="fields">
           <div class="field"><label for="c-desde">Cobrar mensalidades a partir de</label><input id="c-desde" type="month" value="${c.cobrancaDesde}"><span class="hint">Meses anteriores não contam como atraso. Use o mês em que o controle começou a ser feito no sistema.</span></div>
