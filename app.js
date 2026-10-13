@@ -1014,13 +1014,15 @@ const FICHA_CSS = `@page{size:A4 portrait;margin:12mm 14mm}
 .foto{width:30mm;height:40mm;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#777;text-align:center;overflow:hidden;justify-self:end}
 .foto img{width:100%;height:100%;object-fit:cover}
 table.fc{width:100%;border-collapse:collapse;table-layout:fixed}
-table.fc td{border:1px solid #9aa4a0;padding:2px 6px 3px;vertical-align:top;height:9.5mm}
+table.fc td{border:1px solid #9aa4a0;padding:2px 6px 3px;vertical-align:top;height:9mm}
 table.fc.top td{height:10mm}
 table.fc .l{display:block;font-size:6.8pt;text-transform:uppercase;letter-spacing:.05em;color:#555}
 table.fc .v{font-size:10pt;font-weight:600;overflow-wrap:anywhere}
+table.fc td.fcons{height:auto;font-size:7.6pt;line-height:1.3;color:#222;padding:3px 6px}
+.fcons .box{display:inline-block;width:3mm;height:3mm;border:1px solid #111;margin-right:5px;vertical-align:-.6mm}
 .fsec{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2D7A38;margin:8px 0 3px}
 .fdecl{margin:10px 0 4px;text-align:justify}.flocal{margin:10px 0 0}
-.fass{display:grid;grid-template-columns:repeat(auto-fit,minmax(62mm,1fr));gap:14mm;margin-top:15mm;text-align:center;font-size:9pt;break-inside:avoid}
+.fass{display:grid;grid-template-columns:repeat(auto-fit,minmax(62mm,1fr));gap:14mm;margin-top:13mm;text-align:center;font-size:9pt;break-inside:avoid}
 .fass span{display:block;border-top:1px solid #111;padding-top:3px}.fass small{display:block;color:#444}
 .fuso{margin-top:7mm;border:1px dashed #888;padding:6px 8px;font-size:8.5pt;color:#333;display:flex;gap:18px;flex-wrap:wrap}
 .termo p{text-align:justify;margin:0 0 9px}.linha{display:inline-block;min-width:70mm;border-bottom:1px solid #111}`;
@@ -1073,6 +1075,7 @@ function fichaHTML(a, foto) {
     <table class="fc"><tbody>
       <tr>${cel('Contato de emergência', a && v(a.emergNome), 2)}${cel('Parentesco', a && v(a.emergParentesco))}${cel('Telefone', a && v(a.emergTelefone))}</tr>
       <tr>${cel('Alergias, condições de saúde e medicamentos', a && v(a.saudeObs), 4)}</tr>
+      <tr><td colspan="4" class="fcons"><span class="box"></span>Autorizo a associação a registrar as informações de saúde acima e a usá-las somente para orientar o atendimento e avisar o contato de emergência se o(a) associado(a) passar mal durante as atividades da casa (LGPD, art. 11). A autorização pode ser retirada a qualquer momento na secretaria.</td></tr>
     </tbody></table>
     ${menor ? `<div class="fsec">Responsável legal ${branco ? '(preencher se o associado for menor de 18 anos)' : '(associado menor de 18 anos)'}</div>
     <table class="fc"><tbody><tr>${cel('Nome do responsável', a && v(a.responsavelNome), 2)}${cel('CPF do responsável', a && a.responsavelCpf ? fmtCPF(a.responsavelCpf) : '')}${cel('Parentesco', a && v(a.responsavelParentesco))}</tr></tbody></table>` : ''}
