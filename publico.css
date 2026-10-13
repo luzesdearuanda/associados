@@ -38,3 +38,5 @@ input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding
 @keyframes g{to{transform:rotate(360deg)}}
 footer{text-align:center;font-size:.82rem;color:var(--muted)}
 footer a{color:var(--brand)}
+.mens{display:grid;gap:8px;margin-top:6px;border-top:1px solid var(--line, #ddd);padding-top:12px}
+.mens h2{font-size:1.05rem;margin:0}
