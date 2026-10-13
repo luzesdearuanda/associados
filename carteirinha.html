@@ -45,9 +45,26 @@
     el.innerHTML = `<div class="status ${ok ? 'ok' : 'bad'}">${ok ? ICO.ok : ICO.bad}<span>${ok ? `Válida até ${fmtD(c.validade)}` : vencida ? `Vencida em ${fmtD(c.validade)}. Procure a secretaria para renovar.` : `Situação do associado: ${esc(a.situacao)}.`}</span></div>
       ${offline ? `<p class="small muted">Sem conexão: mostrando a carteirinha salva neste aparelho em ${fmtD(offline.slice(0, 10))}.</p>` : ''}
       <div class="faces"><div>${CARTAO.frente(d)}</div><div>${CARTAO.verso(d)}</div></div>
+      ${mensalidades(r.mensalidades)}
       <div class="btns"><button class="btn primary" id="btn-img">${ICO.img} Salvar imagem da carteirinha</button></div>
       <p class="small muted">Dica: no celular, use "Adicionar à tela inicial" no menu do navegador para abrir a carteirinha com um toque. Este link é pessoal: não compartilhe.</p>`;
     document.getElementById('btn-img').onclick = () => salvarImagem(d);
+    const bp = document.getElementById('btn-pix'); if (bp) bp.onclick = () => { try { navigator.clipboard.writeText(bp.dataset.pix).then(() => { bp.textContent = 'Código copiado'; }); } catch (e) { } };
+  }
+  const MESES_C = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const fmtComp = c => { const [y, m] = String(c).split('-'); return `${MESES_C[+m - 1]}/${y}`; };
+  const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  function qrSvg(t, tam) { if (typeof qrcode !== 'function' || !t) return ''; const q = qrcode(0, 'M'); q.addData(t); q.make(); const n = q.getModuleCount(), m = tam / (n + 8); let d = ''; for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${((c + 4) * m).toFixed(2)} ${((r + 4) * m).toFixed(2)}h${m.toFixed(2)}v${m.toFixed(2)}h-${m.toFixed(2)}z`; return `<svg viewBox="0 0 ${tam} ${tam}" width="${tam}" height="${tam}" style="background:#fff;border-radius:8px;max-width:100%"><path d="${d}" fill="#000" shape-rendering="crispEdges"/></svg>`; }
+  // Mensalidades (quando a secretaria liga esta opção): meses pagos, em aberto e o PIX para pagar
+  function mensalidades(m) {
+    if (!m) return '';
+    const pagas = (m.pagas || []).slice(-6).map(fmtComp).join(', ');
+    if (!m.aberto.length) return `<section class="mens"><h2>Mensalidades</h2><div class="status ok">${ICO.ok}<span>${m.isentoAte ? `Isento(a) de mensalidade até ${fmtComp(m.isentoAte)}.` : 'Mensalidades em dia.'}</span></div>${pagas ? `<p class="small muted">Últimos meses pagos: ${pagas}.</p>` : ''}</section>`;
+    return `<section class="mens"><h2>Mensalidades</h2><div class="status bad">${ICO.bad}<span>Em aberto: ${m.aberto.map(fmtComp).join(', ')} · total ${brl(m.total)}</span></div>
+      ${m.pix ? `<p class="small">Pague pelo PIX: aponte a câmera do app do banco para o QR Code ou copie o código.</p><div style="text-align:center">${qrSvg(m.pix, 200)}</div>
+        <textarea readonly rows="4" style="width:100%;font-family:monospace;font-size:12px" onfocus="this.select()">${esc(m.pix)}</textarea>
+        <div class="btns"><button class="btn" id="btn-pix" data-pix="${esc(m.pix)}">Copiar código PIX</button></div>` : '<p class="small muted">Procure a secretaria para pagar.</p>'}
+      ${pagas ? `<p class="small muted">Últimos meses pagos: ${pagas}. Pagamentos feitos agora aparecem aqui depois que a secretaria registrar.</p>` : ''}</section>`;
   }
   function svgImg(svg) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); }); }
   async function salvarImagem(d) {
