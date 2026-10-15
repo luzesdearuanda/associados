@@ -16,6 +16,82 @@ const fmtStamp = s => s ? `${fmtD(s.slice(0, 10))} ${s.slice(11)}` : '—';
 const hhmm = () => { const d = new Date(); return `${z(d.getHours())}:${z(d.getMinutes())}`; };
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const digits = s => String(s || '').replace(/\D/g, '');
+/* Padronização do preenchimento (as mesmas regras na API e no site).
+   nome: iniciais maiúsculas, com da/das/de/do/dos/e em minúsculo (José Augusto da Silva; Rua Sete de Setembro; Passo Fundo/RS).
+   frase: começa com maiúscula; texto todo em caixa alta vira minúsculo (siglas como PIX e CNH continuam em maiúsculas).
+   tel: (54) 9 9999-9999 para celular e (54) 3333-3333 para fixo; devolve null quando falta o DDD. */
+const PADRAO = (() => {
+  const PART = ['da', 'das', 'de', 'do', 'dos', 'e', 'di', 'du', 'del', 'van', 'von'];
+  const SIGLAS = ['PIX', 'CPF', 'RG', 'CNH', 'CIN', 'CEP', 'CNPJ', 'INSS', 'SUS', 'LTDA', 'MEI', 'ONG', 'TV', 'DVD', 'CD', 'USB', 'LED', 'BR', 'RS', 'SC', 'PR', 'SP', 'RJ', 'MG'];
+  const UF = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
+  const ROMANO = /^(?=[ivx]{2,}$)x{0,3}(ix|iv|v?i{0,3})$/;
+  const ACENTO = { mae: 'Mãe', irma: 'Irmã', irmao: 'Irmão', conjuge: 'Cônjuge', tio: 'Tio', tia: 'Tia', 'nao': 'Não', 'sim': 'Sim' };
+  const limpa = s => String(s == null ? '' : s).replace(/[\t\u00a0 ]+/g, ' ').trim();
+  const cap = w => w.replace(/\p{L}/u, c => c.toUpperCase());
+  function palavra(w, primeira) {
+    if (/\d/.test(w)) return w.toUpperCase(); // BR-285, 201A, 1º
+    const lw = w.toLowerCase(), so = w.replace(/[^\p{L}]/gu, '');
+    if (!primeira && PART.indexOf(lw) >= 0) return lw;
+    if (ROMANO.test(lw)) return lw.toUpperCase(); // João Paulo II
+    if (so.length >= 2 && SIGLAS.indexOf(so) >= 0 && so === so.toUpperCase()) return w; // CEP, RS digitados em sigla
+    // partes separadas por hífen, apóstrofo ou barra (Maria-Clara, D'Ávila, Passo Fundo/RS)
+    return lw.split(/([-'’\/])/).map((p, i, arr) => {
+      const l = p.replace(/[^\p{L}]/gu, '');
+      return i > 0 && arr[i - 1] === '/' && l.length === 2 && UF.indexOf(l.toUpperCase()) >= 0 ? p.toUpperCase() : cap(p);
+    }).join('');
+  }
+  const nome = s => limpa(s).split(' ').filter(Boolean).map((w, i) => palavra(w, i === 0)).join(' ');
+  function caixaAlta(t) { // TUDO EM CAIXA ALTA → minúsculo, preservando as siglas
+    const letras = t.replace(/[^\p{L}]/gu, '');
+    if (letras.length < 2 || letras !== letras.toUpperCase() || letras === letras.toLowerCase()) return t;
+    return t.toLowerCase().replace(/\p{L}+/gu, w => w.length > 1 && SIGLAS.indexOf(w.toUpperCase()) >= 0 ? w.toUpperCase() : w);
+  }
+  function frase(s, multilinha) {
+    let t = String(s == null ? '' : s).replace(/\r\n?/g, '\n');
+    t = multilinha ? t.split('\n').map(limpa).join('\n').replace(/\n{3,}/g, '\n\n').trim() : limpa(t.replace(/\n+/g, ' '));
+    t = t.split('\n').map(caixaAlta).join('\n'); // em texto de várias linhas, linha a linha
+    return t.replace(/(^|[.!?]\s+|\n)([^\p{L}\p{N}]*?)(\p{L})/gu, (m, a, b, c) => a + b + c.toUpperCase());
+  }
+  // parentesco e respostas curtas: corrige acentos comuns (MAE → Mãe)
+  const curto = s => { const f = frase(s), k = f.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); return ACENTO[k] || f; };
+  function tel(s) {
+    const t = limpa(s); if (!t) return '';
+    if (/^\+/.test(t) && !/^\+\s*55/.test(t)) return t; // número de fora do Brasil
+    let d = t.replace(/\D/g, '');
+    if ((d.length === 12 || d.length === 13) && d.slice(0, 2) === '55') d = d.slice(2);
+    if ((d.length === 11 || d.length === 12) && d[0] === '0') d = d.slice(1);
+    if (d.length === 10 && /[6-9]/.test(d[2])) d = d.slice(0, 2) + '9' + d.slice(2); // celular gravado sem o 9
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d[2]} ${d.slice(3, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return null;
+  }
+  const upper = s => limpa(s).toUpperCase();
+  // tipo: nome | frase | texto (várias linhas) | curto | tel | upper
+  function campo(tipo, v) {
+    if (tipo === 'nome') return nome(v);
+    if (tipo === 'frase') return frase(v);
+    if (tipo === 'texto') return frase(v, true);
+    if (tipo === 'curto') return curto(v);
+    if (tipo === 'tel') return tel(v);
+    if (tipo === 'upper') return upper(v);
+    return v;
+  }
+  return { nome, frase, curto, tel, upper, campo };
+})();
+// Campos que se ajustam sozinhos ao sair deles (a API aplica as mesmas regras ao gravar)
+const FMT_CAMPOS = {
+  nome: 'f-nome f-nsoc f-rnome f-enome f-logr f-comp f-bairro f-cid f-nat o-nome c-pres c-tes c-cid a-end e-dir ata-dir',
+  tel: 'f-tel f-etel a-tel', curto: 'f-rpar f-epar', upper: 'f-rg f-num',
+  frase: 'f-prof f-terr d-obs i-obs i-mot i-emot i-cmot m-mot m-cmot m-fmot m-just m-antmot d-mot m-pobs l-desc g-nome k-nome m-cnome m-fnome e-tit e-local e-sub e-mot cp-nome ct-desc ct-mot it-nome it-cat it-local mv-obs mc-desc',
+  texto: 'f-obs f-saude e-desc e-pauta cp-desc it-obs',
+};
+const FMT_ID = {}; Object.keys(FMT_CAMPOS).forEach(t => FMT_CAMPOS[t].split(' ').forEach(id => { FMT_ID[id] = t; }));
+document.addEventListener('focusout', e => {
+  const el = e.target, tipo = el && el.id && FMT_ID[el.id];
+  if (!tipo || el.readOnly || el.disabled || !('value' in el)) return;
+  const v = PADRAO.campo(tipo, el.value);
+  if (v !== null && v !== el.value) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }
+});
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 const fmtMat = n => String(n || 0).padStart(4, '0');
 const fmtBRL = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -622,7 +698,7 @@ VIEWS.associadoForm = {
           ${ed && !isAdmin() ? '' : `<div class="field"><label for="f-mat">Matrícula</label><input id="f-mat" class="mono" inputmode="numeric" value="${ed ? a.matricula : ''}" placeholder="${ed ? '' : `Automática: ${fmtMat(Math.max(S.seqMatricula || 0, ...S.associados.map(x => x.matricula), 0) + 1)}`}"><span class="hint">${ed ? 'Só o administrador altera.' : 'Deixe em branco para usar a próxima.'}</span><span class="msg" id="m-mat"></span></div>`}
         </div></fieldset>
         <fieldset><legend>Contato</legend><div class="fields">
-          <div class="field"><label for="f-tel">Telefone / WhatsApp</label><input id="f-tel" inputmode="tel" value="${v('telefone')}" placeholder="(54) 90000-0000"></div>
+          <div class="field"><label for="f-tel">Telefone / WhatsApp</label><input id="f-tel" inputmode="tel" value="${v('telefone')}" placeholder="(54) 9 0000-0000"></div>
           <div class="field"><label for="f-email">E-mail</label><input id="f-email" type="email" value="${v('email')}"><span class="hint">Usado para enviar a carteirinha.</span><span class="msg" id="m-email"></span></div>
         </div></fieldset>
         <fieldset><legend>Endereço</legend><div class="fields">
@@ -638,7 +714,7 @@ VIEWS.associadoForm = {
         <fieldset><legend>Contato de emergência</legend><div class="fields">
           <div class="field"><label for="f-enome">Nome</label><input id="f-enome" value="${v('emergNome')}"></div>
           <div class="field"><label for="f-epar">Parentesco</label><input id="f-epar" value="${v('emergParentesco')}" placeholder="Ex.: esposa, filho, amiga"></div>
-          <div class="field"><label for="f-etel">Telefone</label><input id="f-etel" inputmode="tel" value="${v('emergTelefone')}" placeholder="(54) 90000-0000"></div>
+          <div class="field"><label for="f-etel">Telefone</label><input id="f-etel" inputmode="tel" value="${v('emergTelefone')}" placeholder="(54) 9 0000-0000"></div>
         </div></fieldset>
         <fieldset id="f-resp-box" ${a && (ehMenor(a) || a.responsavelNome) ? '' : 'hidden'}><legend>Responsável legal (menor de 18 anos)</legend><div class="fields">
           <div class="field"><label for="f-rnome">Nome do responsável <span class="req">*</span></label><input id="f-rnome" value="${v('responsavelNome')}"><span class="msg" id="m-rnome"></span></div>
