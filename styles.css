@@ -607,3 +607,8 @@ label.check input{margin-top:3px;flex:none}
 .bk-list{margin:8px 0 0;padding-left:18px;display:grid;gap:3px}
 .pres-add{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .pres-add input{flex:1 1 180px;min-width:0}
+
+/* Carteirinha provisória / definitiva (v1.6) */
+.antecipa{margin:10px 0;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--surface-2)}
+.antecipa summary{cursor:pointer;font-weight:600}
+.antecipa .field{margin-top:6px}
