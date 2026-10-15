@@ -64,37 +64,39 @@
   const moldura = () => `<rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="28" fill="${COR.fundo}" stroke="${COR.linha}" stroke-width="2"/>`;
   const clip = id => `<clipPath id="${id}"><rect x="0" y="0" width="${W}" height="${H}" rx="28"/></clipPath>`;
 
-  /* d: { nome, matricula, funcao, categoria, validade, cpf, rg, dataIngresso, foto, codigo, assoc:{nome,cnpj,endereco}, presidenteNome, assinatura, textoVerso, siteUrl, logo, selo }
+  /* d: { tipo ('Provisória' | 'Definitiva' | '' nas emitidas antes da versão 1.6), nome, matricula, funcao, categoria, validade, cpf, rg, dataIngresso, foto, codigo, assoc:{nome,cnpj,endereco}, presidenteNome, assinatura, textoVerso, siteUrl, logo, selo }
      opt: { mm: true para impressão em milímetros } */
   function frente(d, opt = {}) {
     const u = 'f' + Math.random().toString(36).slice(2, 8);
     const an = nomeAssoc(d.assoc && d.assoc.nome);
-    const nm = ajustar(d.nome || '', 500, 38, 24, 2, true);
+    // provisória: faixa dourada e título próprio; sem foto, o texto ocupa a largura toda
+    const prov = d.tipo === 'Provisória', foto = dataUrl(d.foto), semFoto = prov && !foto, X = semFoto ? 40 : 306, LW = semFoto ? 776 : 500;
+    const nm = ajustar(d.nome || '', LW, 38, 24, 2, true);
     // Funções: "Da casa · Administrativa" → uma por linha, mesmo tamanho de fonte
     const fPartes = String(d.funcao || '—').split(' · ').filter(Boolean).slice(0, 2);
-    const fAj = fPartes.map(t => ajustar(t, 500, fPartes.length > 1 ? 26 : 28, 17, 1, true));
+    const fAj = fPartes.map(t => ajustar(t, LW, fPartes.length > 1 ? 26 : 28, 17, 1, true));
     const fn = { linhas: fAj.map(x => x.linhas[0]), px: Math.min(...fAj.map(x => x.px)) };
     const yNome = 228, yNome2 = yNome + (nm.linhas.length - 1) * Math.round(nm.px * 1.1);
-    const foto = dataUrl(d.foto), logo = d.logo || '';
+    const logo = d.logo || '';
     return `${svgAbre('Frente da carteirinha de ' + esc(d.nome), opt.mm)}<defs>${clip(u + 'c')}<clipPath id="${u}p"><rect x="40" y="148" width="234" height="312" rx="14"/></clipPath><clipPath id="${u}l"><circle cx="78" cy="66" r="46"/></clipPath></defs>
       <g clip-path="url(#${u}c)">${moldura()}
         <rect x="0" y="0" width="${W}" height="132" fill="${COR.navy}"/>
         <rect x="0" y="132" width="${W}" height="6" fill="${COR.ouro}"/>
         <circle cx="78" cy="66" r="50" fill="#fff"/>${logo ? `<image href="${logo}" x="32" y="20" width="92" height="92" preserveAspectRatio="xMidYMid slice" clip-path="url(#${u}l)"/>` : ''}
         ${texto(148, an.linhas.length > 1 ? 56 : 74, an.linhas, an.px, { bold: true, cor: '#fff', lh: Math.round(an.px * 1.2) })}
-        ${texto(148, an.linhas.length > 1 ? 56 + an.linhas.length * Math.round(an.px * 1.2) + 4 : 104, ['CARTEIRA DE ASSOCIADO(A)'], 16, { bold: true, cor: '#E3B252', ls: 2.5 })}
-        <rect x="40" y="148" width="234" height="312" rx="14" fill="${COR.claro}"/>
+        ${texto(148, an.linhas.length > 1 ? 56 + an.linhas.length * Math.round(an.px * 1.2) + 4 : 104, [prov ? 'CARTEIRA PROVISÓRIA DE ASSOCIADO(A)' : 'CARTEIRA DE ASSOCIADO(A)'], 16, { bold: true, cor: '#E3B252', ls: 2.5 })}
+        ${semFoto ? '' : `<rect x="40" y="148" width="234" height="312" rx="14" fill="${COR.claro}"/>
         ${foto ? `<image href="${foto}" x="40" y="148" width="234" height="312" preserveAspectRatio="xMidYMid slice" clip-path="url(#${u}p)"/>`
         : `<g fill="#C9D3CB"><circle cx="157" cy="262" r="52"/><path d="M68 440c8-70 50-104 89-104s81 34 89 104z"/></g>${texto(157, 446, ['SEM FOTO'], 15, { cor: COR.cinza, bold: true, anchor: 'middle', ls: 1.5 })}`}
-        <rect x="40" y="148" width="234" height="312" rx="14" fill="none" stroke="${COR.verde}" stroke-width="4"/>
-        ${rotulo(306, 180, 'Nome')}
-        ${texto(306, yNome, nm.linhas, nm.px, { bold: true, cor: COR.navy, lh: Math.round(nm.px * 1.1) })}
-        ${rotulo(306, yNome2 + 52, fn.linhas.length > 1 ? 'Funções' : 'Função')}
-        ${texto(306, yNome2 + 86, fn.linhas, fn.px, { bold: true, lh: Math.round(fn.px * 1.2) })}
-        ${rotulo(306, 430, 'Matrícula')}${texto(306, 466, [fmtMat(d.matricula)], 34, { bold: true, cor: COR.navy, ls: 1 })}
-        ${rotulo(556, 430, 'Válida até')}${texto(556, 466, [fmtD(d.validade)], 34, { bold: true, cor: COR.verde })}
-        <rect x="0" y="${H - 44}" width="${W}" height="44" fill="${COR.verde}"/>
-        ${texto(W / 2, H - 15, [String(d.categoria || 'Associado(a)').toUpperCase()], 18, { bold: true, cor: '#fff', anchor: 'middle', ls: 4 })}
+        <rect x="40" y="148" width="234" height="312" rx="14" fill="none" stroke="${COR.verde}" stroke-width="4"/>`}
+        ${rotulo(X, 180, 'Nome')}
+        ${texto(X, yNome, nm.linhas, nm.px, { bold: true, cor: COR.navy, lh: Math.round(nm.px * 1.1) })}
+        ${rotulo(X, yNome2 + 52, fn.linhas.length > 1 ? 'Funções' : 'Função')}
+        ${texto(X, yNome2 + 86, fn.linhas, fn.px, { bold: true, lh: Math.round(fn.px * 1.2) })}
+        ${rotulo(X, 430, 'Matrícula')}${texto(X, 466, [fmtMat(d.matricula)], 34, { bold: true, cor: COR.navy, ls: 1 })}
+        ${rotulo(X + 250, 430, 'Válida até')}${texto(X + 250, 466, [fmtD(d.validade)], 34, { bold: true, cor: prov ? COR.ouro : COR.verde })}
+        <rect x="0" y="${H - 44}" width="${W}" height="44" fill="${prov ? COR.ouro : COR.verde}"/>
+        ${texto(W / 2, H - 15, [(prov ? 'PROVISÓRIA · ' : '') + String(d.categoria || 'Associado(a)').toUpperCase()], 18, { bold: true, cor: '#fff', anchor: 'middle', ls: 4 })}
         ${d.selo ? selo(d.selo.txt, d.selo.cor) : ''}
       </g></svg>`;
   }
