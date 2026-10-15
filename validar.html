@@ -41,10 +41,10 @@
     const v = j.data.result;
     if (v.assocNome) document.getElementById('assoc-nome').textContent = v.assocNome;
     if (!v.encontrada) { el.innerHTML = `<div class="result bad">${NO}<div class="big">Carteirinha não encontrada</div><div>O código ${esc(codigo)} não existe. Confira se foi digitado corretamente.</div></div>`; return; }
-    el.innerHTML = `<div class="result ${v.valida ? 'ok' : 'bad'}">${v.valida ? OK : NO}<div class="big">${v.valida ? 'Carteirinha válida' : 'Carteirinha não válida'}</div>${v.valida ? `<div>Associado(a) ativo(a), válida até ${fmtD(v.validade)}.</div>` : `<div>${esc(v.motivo)}</div>`}</div>
+    el.innerHTML = `<div class="result ${v.valida ? 'ok' : 'bad'}">${v.valida ? OK : NO}<div class="big">${v.valida ? 'Carteirinha válida' : 'Carteirinha não válida'}</div>${v.valida ? `<div>Associado(a) ativo(a), ${v.tipo === 'Provisória' ? 'carteirinha provisória ' : ''}válida até ${fmtD(v.validade)}.</div>` : `<div>${esc(v.motivo)}</div>`}</div>
       <section class="card"><div class="pessoa">${v.foto ? `<img src="data:image/jpeg;base64,${v.foto}" alt="Foto de ${esc(v.nome)}">` : '<div class="sem"></div>'}<div><b>${esc(v.nome)}</b><span class="small muted">Matrícula ${String(v.matricula).padStart(4, '0')}</span></div></div>
-        <dl><div><dt>Situação</dt><dd>${esc(v.situacao)}</dd></div><div><dt>Função</dt><dd>${esc(v.funcao || '—')}</dd></div><div><dt>Válida até</dt><dd>${fmtD(v.validade)}</dd></div><div><dt>Emitida em</dt><dd>${fmtD(v.emitidaEm)}</dd></div></dl>
-        <p class="small muted">Confira se a foto corresponde à pessoa. Consulta feita em ${new Date().toLocaleString('pt-BR')}.</p></section>`;
+        <dl><div><dt>Situação</dt><dd>${esc(v.situacao)}</dd></div>${v.tipo ? `<div><dt>Carteirinha</dt><dd>${esc(v.tipo)}</dd></div>` : ''}<div><dt>Função</dt><dd>${esc(v.funcao || '—')}</dd></div><div><dt>Válida até</dt><dd>${fmtD(v.validade)}</dd></div><div><dt>Emitida em</dt><dd>${fmtD(v.emitidaEm)}</dd></div></dl>
+        <p class="small muted">${v.foto ? 'Confira se a foto corresponde à pessoa.' : 'Carteirinha sem foto: peça um documento com foto para conferir.'} Consulta feita em ${new Date().toLocaleString('pt-BR')}.</p></section>`;
   }
   const c = new URLSearchParams(location.search).get('c');
   if (c) { document.getElementById('codigo').value = c; validar(c); }
