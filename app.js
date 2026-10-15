@@ -149,7 +149,7 @@ function applyChanges(ch) {
 // Executa uma ação e mostra o erro de forma amigável
 async function run(fn) {
   try { return await fn(); }
-  catch (e) { if (e && e.code === 'AUTH') return; if (!e || !['VALIDATION', 'DUP', 'ATRASO', 'DOCS', 'FORBIDDEN', 'NOTFOUND', 'MAIL', 'BUSY', 'NET'].includes(e.code)) console.error(e); toast((e && e.message) || 'Erro inesperado. Tente de novo.', 'bad'); }
+  catch (e) { if (e && e.code === 'AUTH') return; if (!e || !['VALIDATION', 'DUP', 'ATRASO', 'DOCS', 'FOTO', 'FORBIDDEN', 'NOTFOUND', 'MAIL', 'BUSY', 'NET'].includes(e.code)) console.error(e); toast((e && e.message) || 'Erro inesperado. Tente de novo.', 'bad'); }
 }
 
 /* ---- Login com Google ---- */
@@ -255,6 +255,7 @@ function kpis() {
     vencendo: fins.filter(x => x.c.code === 'vence'),
     vencidas: fins.filter(x => x.c.code === 'vencida'),
     semCart: fins.filter(x => x.c.code === 'nenhuma'),
+    definitiva: fins.filter(x => direitoDefinitiva(x.a)),
     isencoes: fins.filter(x => x.f.cobrado && x.f.isencao),
     aniv: aniversariantes(new Date().getMonth() + 1),
   };
@@ -415,6 +416,7 @@ VIEWS.inicio = {
       ...k.inadimplentes.map(x => ({ a: x.a, t: `${plural(x.f.atraso, 'mensalidade atrasada', 'mensalidades atrasadas')}`, cls: 'bad' })),
       ...k.vencidas.map(x => ({ a: x.a, t: x.c.label, cls: 'bad' })),
       ...k.vencendo.map(x => ({ a: x.a, t: x.c.label, cls: 'warn' })),
+      ...k.definitiva.map(x => ({ a: x.a, t: `completou ${plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos')} de casa: emitir a carteirinha definitiva`, cls: 'warn' })),
       ...k.isencoes.filter(x => isencaoRevisar(x.f.isencao)).map(x => ({ a: x.a, t: `isenção termina em ${fmtComp(x.f.isencao.fim)}: renovar ou encerrar`, cls: 'warn' })),
     ].slice(0, 10);
     const catsSemValor = S.categorias.filter(c => c.ativa && !c.valor && !/isent/i.test(c.nome));
@@ -433,6 +435,7 @@ VIEWS.inicio = {
       ${kpiBox('Mensalidades em atraso', k.inadimplentes.length, `acima da tolerância de ${plural(S.config.toleranciaMeses, 'mês', 'meses')}`, k.inadimplentes.length ? 'bad' : '', 'data-act="go" data-v="mensalidades" data-f="inadimplentes"')}
       ${kpiBox('Carteirinhas vencidas', k.vencidas.length, k.vencendo.length ? `${k.vencendo.length} vencem em até 30 dias` : 'nenhuma vencendo em 30 dias', k.vencidas.length ? 'bad' : k.vencendo.length ? 'warn' : '', 'data-act="go" data-v="carteirinhas" data-f="vencidas"')}
       ${kpiBox('Sem carteirinha', k.semCart.length, 'associados ativos', '', 'data-act="go" data-v="carteirinhas" data-f="sem"')}
+      ${k.definitiva.length ? kpiBox('Direito à definitiva', k.definitiva.length, `com provisória e ${plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos')} de casa`, 'warn', 'data-act="go" data-v="carteirinhas" data-f="definitiva"') : ''}
       ${k.isencoes.length ? (rv => kpiBox('Isentos de mensalidade', k.isencoes.length, rv ? `${plural(rv, 'isenção termina', 'isenções terminam')} até ${fmtComp(addMonthsComp(COMP_ATUAL(), 1))}` : 'desemprego, doença e outros', rv ? 'warn' : '', 'data-act="go" data-v="mensalidades" data-f="isencao"'))(k.isencoes.filter(x => isencaoRevisar(x.f.isencao)).length) : ''}
       ${MOD.kpis ? MOD.kpis() : ''}
       ${(n => kpiBox('Documentação incompleta', n, n ? 'ativos sem todos os documentos' : 'todos os ativos com documentos', n ? 'warn' : '', 'data-act="go" data-v="associados" data-docs="incompleta"'))(S.associados.filter(a => a.situacao === 'Ativo' && !docStatus(a).completo).length)}
@@ -529,7 +532,7 @@ VIEWS.associado = {
             <div><dt>E-mail</dt><dd>${a.email ? `<a href="mailto:${esc(a.email)}">${esc(a.email)}</a>` : '—'}</dd></div>
             <div class="full"><dt>Endereço</dt><dd>${esc(enderecoDe(a) || '—')}</dd></div>
             <div class="full"><dt>Contato de emergência</dt><dd>${a.emergNome || a.emergTelefone ? `${esc(a.emergNome || '')}${a.emergParentesco ? ` (${esc(a.emergParentesco)})` : ''}${a.emergTelefone ? ` · <a href="tel:${digits(a.emergTelefone)}">${esc(a.emergTelefone)}</a>` : ''}` : '—'}</dd></div>
-            ${a.responsavelNome ? `<div class="full"><dt>Responsável legal${ehMenor(a) ? ' (menor de 18 anos)' : ''}</dt><dd>${esc(a.responsavelNome)}${a.responsavelParentesco ? ` (${esc(a.responsavelParentesco)})` : ''}${a.responsavelCpf ? ` · CPF ${showCPF(a.responsavelCpf)}` : ''}</dd></div>` : ehMenor(a) ? '<div class="full"><dt>Responsável legal</dt><dd style="color:var(--warn)">menor de 18 anos sem responsável cadastrado</dd></div>' : ''}
+            ${a.responsavelNome ? `<div class="full"><dt>Responsável legal${ehMenor(a) ? ' (menor de 18 anos)' : ''}</dt><dd>${esc(a.responsavelNome)}${a.responsavelParentesco ? ` (${esc(a.responsavelParentesco)})` : ''}${a.responsavelCpf ? ` · CPF ${showCPF(a.responsavelCpf)}` : ''}${a.responsavelEmail ? ` · ${esc(a.responsavelEmail)}` : ''}</dd></div>` : ehMenor(a) ? '<div class="full"><dt>Responsável legal</dt><dd style="color:var(--warn)">menor de 18 anos sem responsável cadastrado</dd></div>' : ''}
             ${a.entradaCorrente ? `<div><dt>Entrada na corrente</dt><dd>${fmtD(a.entradaCorrente)}</dd></div>` : ''}
             ${a.outroTerreiro ? `<div><dt>Outro terreiro</dt><dd>${esc(a.outroTerreiro)}</dd></div>` : ''}
             ${a.saudeObs ? `<div class="full"><dt>Saúde</dt><dd>${esc(a.saudeObs)}</dd></div>` : ''}
@@ -580,8 +583,9 @@ function cartPainel(a, cs) {
   const c = cs.c;
   return `<div class="cart-wrap"><div class="cart-preview" id="cart-prev"><div class="cart-face"></div><div class="cart-face"></div></div>
     <div class="cart-side">
-      <dl class="facts"><div><dt>Emitida em</dt><dd>${fmtStamp(c.emitidaEm)}</dd></div><div><dt>Validade</dt><dd>${pill(cs.label, cs.cls)}</dd></div>
+      <dl class="facts"><div><dt>Tipo</dt><dd>${c.tipo ? esc(c.tipo) : '—'}${c.antecipadaPor ? ' <span class="small muted">(antecipada)</span>' : ''}${direitoDefinitiva(a) ? ' ' + pill('Direito à definitiva', 'warn') : ''}</dd></div><div><dt>Emitida em</dt><dd>${fmtStamp(c.emitidaEm)}</dd></div><div><dt>Validade</dt><dd>${pill(cs.label, cs.cls)}</dd></div>
         <div><dt>Código de validação</dt><dd class="mono">${CARTAO.fmtCod(c.codigo)}</dd></div>${c.enviadaEm ? `<div><dt>Enviada por e-mail</dt><dd>${fmtStamp(c.enviadaEm)}</dd></div>` : ''}
+        ${c.antecipadaPor ? `<div class="full"><dt>Definitiva antes de ${plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos')} de casa</dt><dd class="small">${esc(c.antecipadaPor)}: ${esc(c.motivoAntecipacao)}</dd></div>` : ''}
         ${c.liberadaPor ? `<div class="full"><dt>Liberada com mensalidades em atraso</dt><dd class="small">${esc(c.liberadaPor)}: ${esc(c.justificativa)}</dd></div>` : ''}</dl>
       <div class="btn-grid">
         <button class="btn" data-act="cartImprimir" data-id="${c.id}" data-modo="a4">${ic('print')} Imprimir (folha A4)</button>
@@ -640,6 +644,7 @@ VIEWS.associadoForm = {
           <div class="field"><label for="f-rnome">Nome do responsável <span class="req">*</span></label><input id="f-rnome" value="${v('responsavelNome')}"><span class="msg" id="m-rnome"></span></div>
           <div class="field"><label for="f-rcpf">CPF do responsável</label><input id="f-rcpf" class="mono" inputmode="numeric" data-in="cpfResp" value="${esc(a && a.responsavelCpf ? fmtCPF(a.responsavelCpf) : '')}" placeholder="000.000.000-00"><span class="msg" id="m-rcpf"></span></div>
           <div class="field"><label for="f-rpar">Parentesco</label><input id="f-rpar" value="${v('responsavelParentesco')}" placeholder="Ex.: mãe, pai, avó"><span class="hint">Assina a ficha e o termo de uso de imagem.</span></div>
+          <div class="field"><label for="f-remail">E-mail do responsável</label><input id="f-remail" type="email" inputmode="email" value="${v('responsavelEmail')}" placeholder="nome@exemplo.com"><span class="hint">Usado no cadastro da biblioteca se o menor não tiver e-mail.</span></div>
         </div></fieldset>
         <fieldset><legend>Associação</legend><div class="fields">
           <div class="field"><label for="f-cat">Categoria <span class="req">*</span></label><select id="f-cat"><option value="">Escolha…</option>${cats.map(c => `<option value="${c.id}" ${a && a.categoriaId === c.id ? 'selected' : ''}>${esc(c.nome)} · ${c.valor ? fmtBRL(c.valor) + '/mês' : 'sem mensalidade'}</option>`).join('')}</select><span class="msg" id="m-cat"></span></div>
@@ -708,7 +713,7 @@ VIEWS.mensalidades = {
 function cartLista() {
   const f = P.f || 'todas', q = norm(P.q || '');
   return S.associados.filter(a => a.situacao === 'Ativo').map(a => ({ a, c: cartSt(a), fin: financeiro(a) }))
-    .filter(x => f === 'todas' ? x.c.code !== 'nenhuma' : f === 'vencidas' ? x.c.code === 'vencida' : f === 'vence' ? x.c.code === 'vence' : f === 'sem' ? x.c.code === 'nenhuma' : true)
+    .filter(x => f === 'todas' ? x.c.code !== 'nenhuma' : f === 'vencidas' ? x.c.code === 'vencida' : f === 'vence' ? x.c.code === 'vence' : f === 'sem' ? x.c.code === 'nenhuma' : f === 'prov' ? x.c.c && x.c.c.tipo === 'Provisória' : f === 'definitiva' ? direitoDefinitiva(x.a) : true)
     .filter(x => !q || norm(x.a.nome).includes(q) || String(x.a.matricula) === String(+digits(P.q)))
     .sort((x, y) => x.a.nome.localeCompare(y.a.nome, 'pt-BR'));
 }
@@ -719,7 +724,7 @@ function cartResults() {
   return `<div class="table-wrap cards"><table><thead><tr><th><label class="check"><input type="checkbox" data-ch="cartTodos" ${todosSel ? 'checked' : ''}><span class="sr">Selecionar todos</span></label></th><th>Associado</th><th>Carteirinha</th><th>Mensalidade</th><th>Função</th></tr></thead><tbody>
     ${list.map(x => `<tr><td class="pick"><label class="check"><input type="checkbox" data-ch="cartSel" data-id="${x.a.id}" ${UI.sel.has(x.a.id) ? 'checked' : ''}><span class="sr">Selecionar ${esc(x.a.nome)}</span></label></td>
       <td class="lead"><button class="who-row linklike" data-act="go" data-v="associado" data-id="${x.a.id}">${avatar(x.a)}<div><div class="t">${esc(x.a.nome)}</div><div class="s mono">${fmtMat(x.a.matricula)}</div></div></button></td>
-      <td data-label="Carteirinha">${pill(x.c.label, x.c.cls)}</td><td data-label="Mensalidade">${finPill(x.a, x.fin)}</td><td data-label="Função">${esc(funcaoPrincipal(x.a.id) || '—')}</td></tr>`).join('')}
+      <td data-label="Carteirinha">${pill(x.c.label, x.c.cls)}${x.c.c && x.c.c.tipo === 'Provisória' ? ' ' + pill('Provisória', 'info') : ''}${direitoDefinitiva(x.a) ? ' ' + pill('Direito à definitiva', 'warn') : ''}</td><td data-label="Mensalidade">${finPill(x.a, x.fin)}</td><td data-label="Função">${esc(funcaoPrincipal(x.a.id) || '—')}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function cartBarra() {
@@ -734,9 +739,9 @@ VIEWS.carteirinhas = {
     const k = kpis(), f = P.f || 'todas';
     const tab = (id, label, n) => `<button class="tab ${f === id ? 'on' : ''}" data-act="cartF" data-f="${id}">${label}${n != null ? ` <span class="count">${n}</span>` : ''}</button>`;
     const ativas = S.associados.filter(a => a.situacao === 'Ativo' && carteirinhaAtiva(a.id)).length;
-    return `<div class="page-head"><div><h1>Carteirinhas</h1><p class="sub">Validade: ${S.config.validadeModo === '12meses' ? '12 meses a partir da emissão' : 'até 31 de dezembro do ano da emissão'}. Selecione para imprimir ou emitir várias de uma vez.</p></div>
+    return `<div class="page-head"><div><h1>Carteirinhas</h1><p class="sub">Provisória para quem tem menos de ${plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos')} de casa (vale até completar esse tempo; foto opcional). Definitiva: ${regraValidade()}, com foto. Selecione para imprimir ou emitir várias de uma vez.</p></div>
       <a class="btn sm" href="validar.html" target="_blank" rel="noopener">${ic('check')} Página de validação</a></div>
-      <div class="tabs" role="tablist">${tab('todas', 'Com carteirinha', ativas)}${tab('vence', 'Vencem em 30 dias', k.vencendo.length)}${tab('vencidas', 'Vencidas', k.vencidas.length)}${tab('sem', 'Sem carteirinha', k.semCart.length)}</div>
+      <div class="tabs" role="tablist">${tab('todas', 'Com carteirinha', ativas)}${tab('vence', 'Vencem em 30 dias', k.vencendo.length)}${tab('vencidas', 'Vencidas', k.vencidas.length)}${tab('sem', 'Sem carteirinha', k.semCart.length)}${tab('prov', 'Provisórias', S.associados.filter(a => a.situacao === 'Ativo' && (carteirinhaAtiva(a.id) || {}).tipo === 'Provisória').length)}${k.definitiva.length ? tab('definitiva', 'Direito à definitiva', k.definitiva.length) : ''}</div>
       <div class="toolbar"><label class="search"><span class="sr">Buscar</span>${ic('search')}<input id="c-q" data-in="cartQ" value="${esc(P.q || '')}" placeholder="Nome ou matrícula" autocomplete="off"></label></div>
       <div class="sel-bar" id="cart-bar">${cartBarra()}</div>
       <div id="cart-res">${cartResults()}</div>`;
@@ -774,6 +779,9 @@ VIEWS.configuracoes = {
           <td data-label="Ativos" class="num">${S.associados.filter(x => x.categoriaId === k.id && x.situacao === 'Ativo').length}</td><td data-label="Situação">${pill(k.ativa ? 'Ativa' : 'Inativa', k.ativa ? 'ok' : 'mute')}</td>
           <td class="actions"><button class="btn sm" data-act="catEditar" data-id="${k.id}">${ic('edit')} Editar</button></td></tr>`).join('')}
         </tbody></table></div></section>
+      <section class="panel"><div class="panel-head"><h2>Biblioteca</h2><div class="btns"><button class="btn sm" data-act="bibStatus">Ver situação</button><button class="btn sm" data-act="bibAtualizar">${ic('refresh')} Atualizar agora</button></div></div>
+        <p class="small muted">Todo associado tem cadastro na biblioteca, criado e atualizado sozinho a partir deste cadastro (nome, CPF, e-mail, telefone e situação). Menor sem CPF ou e-mail usa os do responsável. Desligados e falecidos ficam inativos na biblioteca; mensalidades acima da tolerância impedem a retirada de livros até regularizar.</p>
+        <div id="bib-st" class="small"></div></section>
       ${MOD.configHTML ? MOD.configHTML() : ''}
       <form class="panel form" data-form="config" novalidate>
         <fieldset><legend>Mensalidades</legend><div class="fields">
@@ -782,7 +790,9 @@ VIEWS.configuracoes = {
           <div class="field"><label for="c-isen">Prazo padrão da isenção (meses)</label><input id="c-isen" type="number" min="1" max="12" value="${c.isencaoMeses || 6}"><span class="hint">Sugestão ao conceder isenção por desemprego ou doença. Depois dá para renovar.</span></div>
         </div></fieldset>
         <fieldset><legend>Carteirinha</legend><div class="fields">
-          <div class="field"><label for="c-val">Validade</label><select id="c-val"><option value="fimAno" ${c.validadeModo !== '12meses' ? 'selected' : ''}>Até 31 de dezembro do ano da emissão</option><option value="12meses" ${c.validadeModo === '12meses' ? 'selected' : ''}>12 meses a partir da emissão</option></select></div>
+          <div class="field"><label for="c-anosdef">Tempo de casa para a definitiva (anos)</label><input id="c-anosdef" type="number" min="0" max="10" value="${c.anosDefinitiva ?? 3}"><span class="hint">Contado da data de ingresso. Antes disso a carteirinha é provisória (foto opcional) e vale até a véspera de completar esse tempo.</span></div>
+          <div class="field"><label for="c-vq">Validade da definitiva</label><div class="inline"><input id="c-vq" type="number" min="0" max="120" value="${c.valQtd ?? 5}" style="max-width:6rem"><select id="c-vu"><option value="anos" ${c.valUnid !== 'meses' ? 'selected' : ''}>anos</option><option value="meses" ${c.valUnid === 'meses' ? 'selected' : ''}>meses</option></select></div>
+            <label class="check small"><input type="checkbox" id="c-vfim" ${c.valFimAno ? 'checked' : ''}> Terminar em 31 de dezembro do último ano</label><span class="hint">Contada da emissão. Ex.: 5 anos (padrão); 1 ano; 0 + 31 de dezembro = até o fim do ano da emissão.</span></div>
           <div class="field"><label for="c-pres">Nome do(a) presidente</label><input id="c-pres" value="${esc(c.presidenteNome || '')}"><span class="hint">Aparece sob a assinatura, no verso.</span></div>
           <div class="field full"><label for="c-verso">Texto do verso</label><input id="c-verso" maxlength="200" value="${esc(c.textoVerso || '')}"></div>
           <div class="field full"><label for="c-url">Endereço do sistema (usado no QR Code e nos links)</label><input id="c-url" value="${esc(c.siteUrl || '')}"><span class="hint">Só mude se o endereço do site mudar. Carteirinhas já impressas continuam apontando para o endereço antigo.</span></div>
@@ -1246,7 +1256,7 @@ async function fotoCompleta(aid) {
 async function dadosCartao(c, opt = {}) {
   const a = assoc(c.assocId), cs = cartSt(a);
   return {
-    nome: a.nome, matricula: a.matricula, funcao: funcaoPrincipal(a.id) || c.funcao, categoria: catNome(a.categoriaId) || c.categoria, validade: c.validade,
+    tipo: c.tipo || '', nome: a.nome, matricula: a.matricula, funcao: funcaoPrincipal(a.id) || c.funcao, categoria: catNome(a.categoriaId) || c.categoria, validade: c.validade,
     cpf: a.cpf ? fmtCPF(a.cpf) : '', rg: a.rg, dataIngresso: a.dataIngresso, foto: opt.full ? await fotoCompleta(a.id) : a.fotoMini, codigo: c.codigo,
     assoc: assocCfg(), presidenteNome: S.config.presidenteNome, assinatura: S.assinatura, textoVerso: S.config.textoVerso, siteUrl: S.config.siteUrl,
     logo: await CARTAO.logo(LOGO), selo: opt.selo === false ? null : cs.code === 'vencida' ? { txt: 'VENCIDA', cor: '#B4332A' } : null,
@@ -1283,7 +1293,24 @@ function opcoesPosEmissao(c) {
       ${a.email ? `<button class="btn" data-act="cartEmail" data-id="${c.id}">${ic('mail')} Enviar por e-mail</button>` : ''}
     </div><div class="modal-actions"><button class="btn primary" data-act="close">Concluir</button></div>`);
 }
-const validadePrevista = () => { const d = new Date(); return S.config.validadeModo === '12meses' ? isoLocal(new Date(d.getFullYear() + 1, d.getMonth(), d.getDate() - 1)) : `${d.getFullYear()}-12-31`; };
+// Carteirinha provisória (menos de N anos de casa) e definitiva — mesma regra da API (versão 1.6)
+function definitivaEm(a) {
+  if (!a || !/^\d{4}-\d{2}-\d{2}$/.test(a.dataIngresso || '')) return '';
+  const [y, m, d] = a.dataIngresso.split('-').map(Number), t = new Date(y + (Number(S.config.anosDefinitiva) || 0), m - 1, d); if (t.getMonth() !== m - 1) t.setDate(0);
+  return isoLocal(t);
+}
+const tipoPrevisto = a => { const e = definitivaEm(a); return !e || e <= TODAY() ? 'Definitiva' : 'Provisória'; };
+function validadePrevista(a, tipo) {
+  tipo = tipo || (a ? tipoPrevisto(a) : 'Definitiva');
+  if (tipo === 'Provisória') { const [y, m, d] = definitivaEm(a).split('-').map(Number); return isoLocal(new Date(y, m - 1, d - 1)); }
+  const c = S.config, q = Math.max(0, parseInt(c.valQtd, 10) || 0), h = new Date();
+  const v = c.valUnid === 'meses' ? new Date(h.getFullYear(), h.getMonth() + q, h.getDate() - (q ? 1 : 0)) : new Date(h.getFullYear() + q, h.getMonth(), h.getDate() - (q ? 1 : 0));
+  return c.valFimAno ? `${v.getFullYear()}-12-31` : isoLocal(v);
+}
+const regraValidade = () => { const c = S.config, q = Number(c.valQtd) || 0; return q ? `${plural(q, c.valUnid === 'meses' ? 'mês' : 'ano', c.valUnid === 'meses' ? 'meses' : 'anos')}${c.valFimAno ? ', até 31 de dezembro do último ano' : ' a partir da emissão'}` : 'até 31 de dezembro do ano da emissão'; };
+const temFoto = a => !!(a.fotoId || a.fotoMini);
+// carteirinha ativa provisória de quem já completou o tempo: tem direito à definitiva
+const direitoDefinitiva = a => { const c = carteirinhaAtiva(a.id); return !!c && c.tipo === 'Provisória' && a.situacao === 'Ativo' && tipoPrevisto(a) === 'Definitiva'; };
 
 /* ---- Relatórios e planilha ---- */
 function csvCampo(v) { v = String(v ?? ''); return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
@@ -1438,18 +1465,26 @@ const ACT = {
 
   /* Carteirinhas */
   cartEmitir(t) {
-    const a = assoc(t.dataset.id), fin = financeiro(a), atual = carteirinhaAtiva(a.id), val = validadePrevista(), docs = docStatus(a);
+    const a = assoc(t.dataset.id), fin = financeiro(a), atual = carteirinhaAtiva(a.id), tipo = tipoPrevisto(a), val = validadePrevista(a, tipo), docs = docStatus(a);
+    const anos = plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos');
     const bloq = fin.bloqueia || !docs.completo;
+    // a definitiva exige foto (não há liberação para isso)
+    const faltaFoto = tipo === 'Definitiva' && !temFoto(a);
+    const avisoFoto = faltaFoto ? `<div class="note bad"><b>Falta a foto</b><span>Com ${anos} de casa ou mais, ${esc(a.nome.split(' ')[0])} recebe a carteirinha definitiva, que exige foto.</span></div>` : '';
     const avisoFin = fin.bloqueia ? `<div class="note bad"><b>${plural(fin.atraso, 'mês', 'meses')} em atraso</b><span>${fin.atrasadas.map(fmtComp).join(', ')}. A tolerância é de ${plural(S.config.toleranciaMeses, 'mês', 'meses')}.</span></div>` : '';
     const avisoDocs = docs.completo ? '' : `<div class="note bad"><b>Documentação incompleta</b><span>Falta anexar: ${esc(listaE(docs.faltam))}.</span></div>`;
-    if (bloq && !isAdmin()) {
-      openModal(`<h2>Carteirinha bloqueada</h2><p class="muted">${esc(a.nome)}</p>${avisoDocs}${avisoFin}
-        <p class="small muted">${[docs.completo ? '' : 'Anexe os documentos que faltam', fin.bloqueia ? 'registre os pagamentos' : ''].filter(Boolean).join(' e ')} para liberar a carteirinha, ou peça a um administrador para liberar mesmo assim.</p>
-        <div class="modal-actions"><button class="btn" data-act="close">Voltar</button>${fin.bloqueia ? `<button class="btn${docs.completo ? ' primary' : ''}" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button>` : ''}${docs.completo ? '' : `<button class="btn primary" data-act="docAnexar" data-id="${a.id}">${ic('clip')} Anexar documento</button>`}</div>`);
+    if ((bloq && !isAdmin()) || faltaFoto) {
+      openModal(`<h2>Carteirinha bloqueada</h2><p class="muted">${esc(a.nome)}</p>${avisoFoto}${avisoDocs}${avisoFin}
+        <p class="small muted">${[faltaFoto ? 'Adicione a foto no cadastro' : '', docs.completo ? '' : 'anexe os documentos que faltam', fin.bloqueia ? 'registre os pagamentos' : ''].filter(Boolean).join(', ').replace(/^./, c => c.toUpperCase())} para liberar a carteirinha${bloq && !isAdmin() ? ', ou peça a um administrador para liberar os outros pontos' : ''}.${faltaFoto ? ' A foto não pode ser dispensada.' : ''}</p>
+        <div class="modal-actions"><button class="btn" data-act="close">Voltar</button>${faltaFoto ? `<button class="btn" data-act="go" data-v="associado" data-id="${a.id}">${ic('camera')} Abrir o cadastro</button>` : ''}${fin.bloqueia ? `<button class="btn${docs.completo ? ' primary' : ''}" data-act="pagNovo" data-id="${a.id}">${ic('coin')} Registrar pagamento</button>` : ''}${docs.completo ? '' : `<button class="btn primary" data-act="docAnexar" data-id="${a.id}">${ic('clip')} Anexar documento</button>`}</div>`);
       return;
     }
     openModal(`<h2>${atual ? 'Renovar carteirinha' : 'Emitir carteirinha'}</h2>
-      <dl class="facts"><div><dt>Associado</dt><dd>${esc(a.nome)}</dd></div><div><dt>Válida até</dt><dd><b>${fmtD(val)}</b></dd></div><div><dt>Função na carteirinha</dt><dd>${esc(funcaoPrincipal(a.id) || '—')}</dd></div><div><dt>Foto</dt><dd>${a.fotoMini ? 'cadastrada' : '<span style="color:var(--warn)">sem foto</span>'}</dd></div></dl>
+      <dl class="facts"><div><dt>Associado</dt><dd>${esc(a.nome)}</dd></div><div><dt>Tipo</dt><dd><b>${tipo}</b>${tipo === 'Provisória' ? `<span class="small muted"> · definitiva a partir de ${fmtD(definitivaEm(a))}</span>` : ''}</dd></div><div><dt>Válida até</dt><dd><b>${fmtD(val)}</b></dd></div><div><dt>Função na carteirinha</dt><dd>${esc(funcaoPrincipal(a.id) || '—')}</dd></div><div><dt>Foto</dt><dd>${temFoto(a) ? 'cadastrada' : '<span class="muted">sem foto (opcional na provisória)</span>'}</dd></div></dl>
+      ${tipo === 'Provisória' && isAdmin() ? `<details class="antecipa"><summary class="small">Emitir a definitiva antes de completar ${anos} de casa</summary>
+        <p class="small muted">Use quando a data de ingresso não reflete o tempo real de casa. A definitiva valerá até ${fmtD(validadePrevista(a, 'Definitiva'))}${temFoto(a) ? '' : ' e exige foto: adicione a foto no cadastro antes'}.</p>
+        <label class="check small"><input type="checkbox" id="m-ant" ${temFoto(a) ? '' : 'disabled'}> Emitir como definitiva</label>
+        <div class="field"><label for="m-antmot">Motivo</label><input id="m-antmot" maxlength="300" placeholder="Ex.: frequenta a casa desde 2015" ${temFoto(a) ? '' : 'disabled'}></div></details>` : ''}
       ${atual ? '<div class="note warn"><span>A carteirinha atual será substituída: o QR Code e o link pessoal antigos deixam de valer.</span></div>' : ''}
       ${bloq ? `${avisoDocs}${avisoFin}<p class="small muted">Como administrador, você pode liberar informando o motivo. A liberação fica registrada no histórico.</p>
         <div class="field"><label for="m-just">Motivo da liberação</label><input id="m-just" maxlength="300" placeholder="${fin.bloqueia ? 'Ex.: acordo de pagamento' : 'Ex.: documentos serão entregues na próxima gira'}"></div>` : ''}
@@ -1457,7 +1492,7 @@ const ACT = {
   },
   cartEmitirOk(t) {
     run(async () => {
-      const r = await api('carteirinha.emitir', { assocId: t.dataset.id, liberar: !!t.dataset.lib, justificativa: $('#m-just') ? $('#m-just').value : '' }, { msg: 'Emitindo…' });
+      const r = await api('carteirinha.emitir', { assocId: t.dataset.id, liberar: !!t.dataset.lib, justificativa: $('#m-just') ? $('#m-just').value : '', antecipar: !!$('#m-ant')?.checked, motivoAntecipacao: $('#m-antmot') ? $('#m-antmot').value : '' }, { msg: 'Emitindo…' });
       closeModal(); render(); opcoesPosEmissao(S.carteirinhas.find(c => c.id === r.id));
     });
   },
@@ -1506,14 +1541,17 @@ const ACT = {
   cartLote(t) { const cards = [...UI.sel].map(id => carteirinhaAtiva(id)).filter(Boolean).sort((a, b) => assoc(a.assocId).nome.localeCompare(assoc(b.assocId).nome, 'pt-BR')); run(() => imprimirCartoes(cards, t.dataset.modo)); },
   cartEmitirLote() {
     const sel = [...UI.sel].map(assoc).filter(a => a && a.situacao === 'Ativo');
-    const bloq = sel.filter(a => financeiro(a).bloqueia), semDocs = sel.filter(a => !financeiro(a).bloqueia && !docStatus(a).completo), ok = sel.filter(a => !financeiro(a).bloqueia && docStatus(a).completo);
-    openModal(`<h2>Emitir ou renovar carteirinhas</h2><p>${plural(ok.length, 'carteirinha será emitida', 'carteirinhas serão emitidas')}, válidas até <b>${fmtD(validadePrevista())}</b>. As atuais são substituídas.</p>
+    const semFoto = sel.filter(a => tipoPrevisto(a) === 'Definitiva' && !temFoto(a)), comFoto = sel.filter(a => !semFoto.includes(a));
+    const bloq = comFoto.filter(a => financeiro(a).bloqueia), semDocs = comFoto.filter(a => !financeiro(a).bloqueia && !docStatus(a).completo), ok = comFoto.filter(a => !financeiro(a).bloqueia && docStatus(a).completo);
+    const nProv = ok.filter(a => tipoPrevisto(a) === 'Provisória').length, nDef = ok.length - nProv;
+    openModal(`<h2>Emitir ou renovar carteirinhas</h2><p>${plural(ok.length, 'carteirinha será emitida', 'carteirinhas serão emitidas')}${nDef ? `: ${plural(nDef, 'definitiva', 'definitivas')} válida${nDef > 1 ? 's' : ''} até <b>${fmtD(validadePrevista(null, 'Definitiva'))}</b>` : ''}${nProv ? `${nDef ? ' e' : ':'} ${plural(nProv, 'provisória', 'provisórias')} (cada uma vale até a véspera de o associado completar ${plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos')} de casa)` : ''}. As atuais são substituídas.</p>
+      ${semFoto.length ? `<div class="note warn"><b>${plural(semFoto.length, 'associado fica de fora', 'associados ficam de fora')} por falta de foto</b><span>${semFoto.map(a => esc(a.nome)).join(', ')}. A carteirinha definitiva exige foto.</span></div>` : ''}
       ${bloq.length ? `<div class="note warn"><b>${plural(bloq.length, 'associado fica de fora', 'associados ficam de fora')} por mensalidades em atraso</b><span>${bloq.map(a => esc(a.nome)).join(', ')}. Emita individualmente${isAdmin() ? ', informando o motivo da liberação' : ' depois de registrar os pagamentos'}.</span></div>` : ''}
       ${semDocs.length ? `<div class="note warn"><b>${plural(semDocs.length, 'associado fica de fora', 'associados ficam de fora')} por documentação incompleta</b><span>${semDocs.map(a => esc(a.nome)).join(', ')}. Anexe os documentos no cadastro${isAdmin() ? ' ou emita individualmente, informando o motivo da liberação' : ''}.</span></div>` : ''}
       <div class="modal-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn primary" data-act="cartEmitirLoteOk" ${ok.length ? '' : 'disabled'}>Emitir ${ok.length}</button></div>`);
   },
   cartEmitirLoteOk() {
-    const lista = [...UI.sel].map(assoc).filter(a => a && a.situacao === 'Ativo' && !financeiro(a).bloqueia && docStatus(a).completo);
+    const lista = [...UI.sel].map(assoc).filter(a => a && a.situacao === 'Ativo' && !financeiro(a).bloqueia && docStatus(a).completo && !(tipoPrevisto(a) === 'Definitiva' && !temFoto(a)));
     closeModal();
     run(async () => {
       let n = 0;
@@ -1522,6 +1560,15 @@ const ACT = {
     });
   },
 
+  /* Integração com a biblioteca */
+  bibStatus() {
+    run(async () => {
+      const r = await api('biblioteca.status', {}, { msg: 'Consultando…' }), el = $('#bib-st'); if (!el) return;
+      el.innerHTML = `<p><b>${plural(r.total, 'associado enviado', 'associados enviados')}</b> de ${r.associados}${r.ultimo ? ` · última atualização ${fmtStamp(r.ultimo)}` : ''}.</p>
+        <p class="muted">${plural(r.bloqueados, 'bloqueado', 'bloqueados')} por mensalidades em atraso · ${plural(r.semCpf, 'sem CPF', 'sem CPF')} · ${plural(r.semEmail, 'sem e-mail (não recebe lembretes)', 'sem e-mail (não recebem lembretes)')}.</p>`;
+    });
+  },
+  bibAtualizar() { run(async () => { const r = await api('biblioteca.exportar', {}, { msg: 'Atualizando a biblioteca…' }); toast(`Biblioteca: ${plural(r.novos, 'novo', 'novos')}, ${plural(r.atualizados, 'atualizado', 'atualizados')}`); ACT.bibStatus(); }); },
   /* Administração */
   opStatus(t) { const o = S.operadores[+t.dataset.i]; run(async () => { await api('operador.atualizar', { email: o.email, status: o.status === 'Ativo' ? 'Inativo' : 'Ativo' }); render(); }); },
 };
@@ -1893,7 +1940,7 @@ const FORM = {
     ok = fieldErr('cep', !val('cep') || digits(val('cep')).length === 8 ? '' : 'CEP com 8 números.') && ok;
     ok = fieldErr('corr', !val('corr') || val('corr') <= TODAY() ? '' : 'Data no futuro.') && ok;
     if (!ok) { $('.field.err input, .field.err select')?.focus(); return; }
-    const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: P.id && !val('logr') ? (assoc(P.id) || {}).endereco || '' : '', categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs'), responsavelNome: val('rnome'), responsavelCpf: digits(val('rcpf')), responsavelParentesco: val('rpar'),
+    const p = { nome: val('nome'), cpf: digits(val('cpf')), rg: val('rg'), nascimento: val('nasc'), telefone: val('tel'), email: val('email'), endereco: P.id && !val('logr') ? (assoc(P.id) || {}).endereco || '' : '', categoriaId: val('cat'), dataIngresso: val('ing'), situacao: val('sit'), obs: val('obs'), responsavelNome: val('rnome'), responsavelCpf: digits(val('rcpf')), responsavelParentesco: val('rpar'), responsavelEmail: val('remail'),
       nomeSocial: val('nsoc'), sexo: val('sexo'), estadoCivil: val('civil'), profissao: val('prof'), naturalidade: val('nat'),
       cep: digits(val('cep')), logradouro: val('logr'), numero: val('num'), complemento: val('comp'), bairro: val('bairro'), cidade: val('cid'), uf: val('uf'),
       emergNome: val('enome'), emergParentesco: val('epar'), emergTelefone: val('etel'), entradaCorrente: val('corr'), outroTerreiro: val('terr'), saudeObs: val('saude') };
@@ -1921,7 +1968,7 @@ const FORM = {
     ok = fieldErr('aemail', !v('a-email') || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('a-email')) ? '' : 'E-mail inválido.') && ok;
     if (!ok) return;
     run(async () => {
-      await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), isencaoMeses: v('c-isen'), validadeModo: v('c-val'), presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), fichaDeclaracao: v('c-decl'), termoImagem: ($('#c-termo')?.value || '').trim(), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
+      await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), isencaoMeses: v('c-isen'), anosDefinitiva: v('c-anosdef'), valQtd: v('c-vq'), valUnid: v('c-vu'), valFimAno: !!$('#c-vfim')?.checked, presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), fichaDeclaracao: v('c-decl'), termoImagem: ($('#c-termo')?.value || '').trim(), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
       render(); toast('Configurações salvas');
     });
   },
