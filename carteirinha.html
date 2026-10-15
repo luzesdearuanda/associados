@@ -39,10 +39,10 @@
     const a = r.associado, c = r.carteirinha;
     document.getElementById('assoc-nome').textContent = r.config.assoc.nome;
     const vencida = c.validade < hoje();
-    const d = { nome: a.nome, matricula: a.matricula, funcao: c.funcao, categoria: c.categoria, validade: c.validade, cpf: a.cpf, rg: a.rg, dataIngresso: a.dataIngresso, foto: a.foto, codigo: c.codigo,
+    const d = { tipo: c.tipo || '', nome: a.nome, matricula: a.matricula, funcao: c.funcao, categoria: c.categoria, validade: c.validade, cpf: a.cpf, rg: a.rg, dataIngresso: a.dataIngresso, foto: a.foto, codigo: c.codigo,
       assoc: r.config.assoc, presidenteNome: r.config.presidenteNome, assinatura: r.assinatura, textoVerso: r.config.textoVerso, siteUrl: r.config.siteUrl, logo, selo: vencida ? { txt: 'VENCIDA', cor: '#B4332A' } : a.situacao !== 'Ativo' ? { txt: a.situacao.toUpperCase(), cor: '#B4332A' } : null };
     const ok = !vencida && a.situacao === 'Ativo';
-    el.innerHTML = `<div class="status ${ok ? 'ok' : 'bad'}">${ok ? ICO.ok : ICO.bad}<span>${ok ? `Válida até ${fmtD(c.validade)}` : vencida ? `Vencida em ${fmtD(c.validade)}. Procure a secretaria para renovar.` : `Situação do associado: ${esc(a.situacao)}.`}</span></div>
+    el.innerHTML = `<div class="status ${ok ? 'ok' : 'bad'}">${ok ? ICO.ok : ICO.bad}<span>${ok ? `${c.tipo === 'Provisória' ? 'Carteirinha provisória, válida' : 'Válida'} até ${fmtD(c.validade)}` : vencida ? `Vencida em ${fmtD(c.validade)}. Procure a secretaria para renovar.` : `Situação do associado: ${esc(a.situacao)}.`}</span></div>
       ${offline ? `<p class="small muted">Sem conexão: mostrando a carteirinha salva neste aparelho em ${fmtD(offline.slice(0, 10))}.</p>` : ''}
       <div class="faces"><div>${CARTAO.frente(d)}</div><div>${CARTAO.verso(d)}</div></div>
       ${mensalidades(r.mensalidades)}
