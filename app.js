@@ -514,6 +514,7 @@ VIEWS.inicio = {
       ${k.definitiva.length ? kpiBox('Direito à definitiva', k.definitiva.length, `com provisória e ${plural(Number(S.config.anosDefinitiva) || 0, 'ano', 'anos')} de casa`, 'warn', 'data-act="go" data-v="carteirinhas" data-f="definitiva"') : ''}
       ${k.isencoes.length ? (rv => kpiBox('Isentos de mensalidade', k.isencoes.length, rv ? `${plural(rv, 'isenção termina', 'isenções terminam')} até ${fmtComp(addMonthsComp(COMP_ATUAL(), 1))}` : 'desemprego, doença e outros', rv ? 'warn' : '', 'data-act="go" data-v="mensalidades" data-f="isencao"'))(k.isencoes.filter(x => isencaoRevisar(x.f.isencao)).length) : ''}
       ${MOD.kpis ? MOD.kpis() : ''}
+      ${isAdmin() ? (n => n ? kpiBox('Documentos para conferir', n, 'anexados aguardando aprovação', 'warn', 'data-act="go" data-v="associados" data-docs="conferir"') : '')((S.documentos || []).filter(d => d.status === 'Aguardando' && !d.excluido).length) : ''}
       ${(n => kpiBox('Documentação incompleta', n, n ? 'ativos sem todos os documentos' : 'todos os ativos com documentos', n ? 'warn' : '', 'data-act="go" data-v="associados" data-docs="incompleta"'))(S.associados.filter(a => a.situacao === 'Ativo' && !docStatus(a).completo).length)}
       ${canFin() ? (al => kpiBox('Saldo em caixa e bancos', fmtBRL(saldoTotal()), al.vencidas.length ? `${plural(al.vencidas.length, 'conta vencida', 'contas vencidas')} a pagar` : al.semana.length ? `${plural(al.semana.length, 'conta vence', 'contas vencem')} em 7 dias` : 'nenhuma conta vencida', al.vencidas.length ? 'money bad' : al.semana.length ? 'money warn' : 'money', `data-act="go" data-v="financeiro" ${al.vencidas.length || al.semana.length ? 'data-tab="pagar"' : ''}`))(finAlertas()) : ''}
     </div>
@@ -535,7 +536,8 @@ function assocFiltrados() {
     if ((P.sit || 'Ativo') !== 'todos' && a.situacao !== (P.sit || 'Ativo')) return false;
     if (P.cat && a.categoriaId !== P.cat) return false;
     if (P.fun && !funcoesAtuais(a.id).some(x => x.funcaoId === P.fun)) return false;
-    if (P.docs && (P.docs === 'incompleta') === docStatus(a).completo) return false;
+    if (P.docs === 'conferir') { if (!docsAguardando(a.id).length) return false; }
+    else if (P.docs && (P.docs === 'incompleta') === docStatus(a).completo) return false;
     if (!q) return true;
     return norm(a.nome).includes(q) || (qd && (String(a.matricula) === String(+qd) || (qd.length >= 4 && a.cpf.includes(qd))));
   }).sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
@@ -560,7 +562,7 @@ VIEWS.associados = {
         <div class="field" style="flex:0 1 170px"><label class="sr" for="as-sit">Situação</label><select id="as-sit" data-ch="asSit">${['Ativo', 'Afastado', 'Desligado', 'Falecido', 'todos'].map(s => `<option value="${s}" ${(P.sit || 'Ativo') === s ? 'selected' : ''}>${s === 'todos' ? 'Todas as situações' : s + 's'}</option>`).join('')}</select></div>
         <div class="field" style="flex:0 1 170px"><label class="sr" for="as-cat">Categoria</label><select id="as-cat" data-ch="asCat"><option value="">Todas as categorias</option>${S.categorias.map(c => `<option value="${c.id}" ${P.cat === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>
         <div class="field" style="flex:0 1 190px"><label class="sr" for="as-fun">Função</label><select id="as-fun" data-ch="asFun"><option value="">Todas as funções</option>${S.funcoes.filter(f => f.ativa).map(f => `<option value="${f.id}" ${P.fun === f.id ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
-        <div class="field" style="flex:0 1 200px"><label class="sr" for="as-docs">Documentação</label><select id="as-docs" data-ch="asDocs"><option value="">Documentação: todas</option><option value="incompleta" ${P.docs === 'incompleta' ? 'selected' : ''}>Documentação incompleta</option><option value="completa" ${P.docs === 'completa' ? 'selected' : ''}>Documentação completa</option></select></div></div>
+        <div class="field" style="flex:0 1 200px"><label class="sr" for="as-docs">Documentação</label><select id="as-docs" data-ch="asDocs"><option value="">Documentação: todas</option><option value="incompleta" ${P.docs === 'incompleta' ? 'selected' : ''}>Documentação incompleta</option><option value="completa" ${P.docs === 'completa' ? 'selected' : ''}>Documentação completa</option><option value="conferir" ${P.docs === 'conferir' ? 'selected' : ''}>Documentos a conferir</option></select></div></div>
       <div id="as-res">${assocResults()}</div>`;
   }
 };
@@ -867,8 +869,9 @@ VIEWS.configuracoes = {
         </div></fieldset>
         <fieldset><legend>Carteirinha</legend><div class="fields">
           <div class="field"><label for="c-anosdef">Tempo de casa para a definitiva (anos)</label><input id="c-anosdef" type="number" min="0" max="10" value="${c.anosDefinitiva ?? 3}"><span class="hint">Contado da data de ingresso. Antes disso a carteirinha é provisória (foto opcional) e vale até a véspera de completar esse tempo.</span></div>
-          <div class="field"><label for="c-vq">Validade da definitiva</label><div class="inline"><input id="c-vq" type="number" min="0" max="120" value="${c.valQtd ?? 5}" style="max-width:6rem"><select id="c-vu"><option value="anos" ${c.valUnid !== 'meses' ? 'selected' : ''}>anos</option><option value="meses" ${c.valUnid === 'meses' ? 'selected' : ''}>meses</option></select></div>
-            <label class="check small"><input type="checkbox" id="c-vfim" ${c.valFimAno ? 'checked' : ''}> Terminar em 31 de dezembro do último ano</label><span class="hint">Contada da emissão. Ex.: 5 anos (padrão); 1 ano; 0 + 31 de dezembro = até o fim do ano da emissão.</span></div>
+          <div class="field"><label for="c-vq">Validade da definitiva (quantidade)</label><div class="inline qtd"><input id="c-vq" type="number" inputmode="numeric" min="0" max="${c.valUnid === 'meses' ? 120 : 20}" value="${c.valQtd ?? 5}" data-in="valPrev"><select id="c-vu" data-ch="valPrev" aria-label="Unidade da validade"><option value="anos" ${c.valUnid !== 'meses' ? 'selected' : ''}>anos</option><option value="meses" ${c.valUnid === 'meses' ? 'selected' : ''}>meses</option></select></div>
+            <label class="check small"><input type="checkbox" id="c-vfim" ${c.valFimAno ? 'checked' : ''} data-ch="valPrev"> Terminar em 31 de dezembro do último ano</label><span class="hint">Quantidade de anos ou meses contados da emissão (não é o ano). Ex.: 5 anos (padrão); 1 ano; 0 + 31 de dezembro = até o fim do ano da emissão. Máximo: 20 anos ou 120 meses.</span>
+            <span class="hint" id="c-vprev">${valPrevTxt(c)}</span></div>
           <div class="field"><label for="c-pres">Nome do(a) presidente</label><input id="c-pres" value="${esc(c.presidenteNome || '')}"><span class="hint">Aparece sob a assinatura, no verso.</span></div>
           <div class="field full"><label for="c-verso">Texto do verso</label><input id="c-verso" maxlength="200" value="${esc(c.textoVerso || '')}"></div>
           <div class="field full"><label for="c-url">Endereço do sistema (usado no QR Code e nos links)</label><input id="c-url" value="${esc(c.siteUrl || '')}"><span class="hint">Só mude se o endereço do site mudar. Carteirinhas já impressas continuam apontando para o endereço antigo.</span></div>
@@ -1077,14 +1080,19 @@ const fmtCEP = c => { c = digits(c); return c.length === 8 ? `${c.slice(0, 5)}-$
 const tipoDoc = d => TIPOS_DOC_ANTIGOS[d.tipo] || d.tipo;
 // Documentação obrigatória (igual à regra da API): ficha assinada, comprovante de residência e documento com foto.
 // Menor de idade pode usar certidão de nascimento + documento do responsável no lugar do documento com foto.
+// versão 1.8: só conta documento aprovado na conferência (anexado antes dela, sem status, vale como aprovado)
+const docValido = d => !d.excluido && (!d.status || d.status === 'Aprovado');
+const docsAguardando = aid => docsDe(aid).filter(d => d.status === 'Aguardando');
 function docStatus(a) {
-  const tem = {}; docsDe(a.id).forEach(d => { tem[tipoDoc(d)] = true; });
-  const menor = ehMenor(a), faltam = [];
-  if (!tem[DOC_FICHA]) faltam.push('ficha de inscrição assinada');
-  if (!tem[DOC_RESID]) faltam.push('comprovante de residência');
-  if (!tem[DOC_FOTO] && !(menor && tem[DOC_CERTIDAO] && tem[DOC_RESP])) faltam.push(menor ? 'documento com foto (ou certidão de nascimento + documento do responsável)' : 'documento com foto (RG, CNH ou CIN)');
-  return { completo: !faltam.length, faltam, tem };
+  const tem = {}, espera = {}; docsDe(a.id).forEach(d => { if (docValido(d)) tem[tipoDoc(d)] = true; else if (d.status === 'Aguardando') espera[tipoDoc(d)] = true; });
+  const menor = ehMenor(a), faltam = [], obs = t => espera[t] ? ' (aguardando conferência)' : '';
+  if (!tem[DOC_FICHA]) faltam.push('ficha de inscrição assinada' + obs(DOC_FICHA));
+  if (!tem[DOC_RESID]) faltam.push('comprovante de residência' + obs(DOC_RESID));
+  if (!tem[DOC_FOTO] && !(menor && tem[DOC_CERTIDAO] && tem[DOC_RESP])) faltam.push((menor ? 'documento com foto (ou certidão de nascimento + documento do responsável)' : 'documento com foto (RG, CNH ou CIN)') + obs(DOC_FOTO));
+  return { completo: !faltam.length, faltam, tem, espera };
 }
+const DOC_ST_CLS = { Aguardando: 'warn', Aprovado: 'ok', Recusado: 'bad' };
+const docStPill = d => d.status ? pill(d.status === 'Aguardando' ? 'Aguardando conferência' : d.status, DOC_ST_CLS[d.status]) : '';
 // Primeiro documento obrigatório que falta (para já vir escolhido ao anexar)
 function proxDoc(a) {
   const st = docStatus(a);
@@ -1210,11 +1218,12 @@ function docsPainel(a) {
   return `<section class="panel"><div class="panel-head"><h2>Ficha de inscrição e documentos</h2>
       <div class="toolbar"><button class="btn sm" data-act="fichaImprimir" data-id="${a.id}">${ic('print')} Imprimir ficha e termo</button><button class="btn sm primary" data-act="docAnexar" data-id="${a.id}">${ic('clip')} Anexar documento</button></div></div>
     ${st.completo ? `<div class="note ok"><span><b>Documentação completa.</b> Ficha e termo de imagem assinados${a.fichaEm ? ` (entregues em ${fmtD(a.fichaEm)})` : ''}, documento com foto e comprovante de residência.</span></div>`
-      : `<div class="note warn"><span><b>Documentação incompleta</b>: falta ${esc(listaE(st.faltam))}. A carteirinha só é emitida com os documentos anexados.${st.tem[DOC_FICHA] ? '' : ` Imprima a ficha e o termo de uso de imagem, colha as assinaturas${ehMenor(a) ? ' (do responsável legal e do associado)' : ''}, escaneie ou fotografe e anexe como "Ficha de inscrição assinada".`}</span></div>`}
+      : `<div class="note warn"><span><b>Documentação incompleta</b>: falta ${esc(listaE(st.faltam))}. A carteirinha só é emitida com os documentos anexados e aprovados na conferência.${st.tem[DOC_FICHA] ? '' : ` Imprima a ficha e o termo de uso de imagem, colha as assinaturas${ehMenor(a) ? ' (do responsável legal e do associado)' : ''}, escaneie ou fotografe e anexe como "Ficha de inscrição assinada".`}</span></div>`}
     <ul class="doc-check">${[[DOC_FICHA, 'Ficha de inscrição e termo assinados'], ...(ehMenor(a) ? [[DOC_FOTO, 'Documento com foto (RG, CNH ou CIN) — ou certidão de nascimento + documento do responsável', !!(st.tem[DOC_FOTO] || (st.tem[DOC_CERTIDAO] && st.tem[DOC_RESP]))]] : [[DOC_FOTO, 'Documento com foto (RG, CNH ou CIN)']]), [DOC_RESID, 'Comprovante de residência']]
-      .map(([tp, rot, ok]) => { ok = ok === undefined ? !!st.tem[tp] : ok; return `<li class="${ok ? 'ok' : 'falta'}">${ic(ok ? 'check' : 'x')} ${rot}</li>`; }).join('')}</ul>
-    ${docs.length ? `<div class="list">${docs.map(d => `<div class="row-item"><span class="who"><b>${esc(tipoDoc(d))}</b><span class="small muted">${esc(d.nome)} · ${fmtStamp(d.enviadoEm)} · ${esc(d.enviadoPor)}${d.obs ? ` · ${esc(d.obs)}` : ''}</span></span>
-      <span class="row-actions"><button class="btn sm" data-act="docVer" data-id="${d.id}">${ic('file')} Abrir</button>${isAdmin() ? `<button class="btn sm ghost icon" data-act="docExcluir" data-id="${d.id}" aria-label="Excluir documento" title="Excluir documento">${ic('x')}</button>` : ''}</span></div>`).join('')}</div>`
+      .map(([tp, rot, ok]) => { ok = ok === undefined ? !!st.tem[tp] : ok; const esp = !ok && st.espera[tp]; return `<li class="${ok ? 'ok' : esp ? 'espera' : 'falta'}">${ic(ok ? 'check' : esp ? 'clock' : 'x')} ${rot}${esp ? ' <span class="small">· aguardando conferência</span>' : ''}</li>`; }).join('')}</ul>
+    ${docs.length ? `<div class="list">${docs.map(d => `<div class="row-item doc-${(d.status || 'Aprovado').toLowerCase()}"><span class="who"><b>${esc(tipoDoc(d))}</b> ${docStPill(d)}<span class="small muted">${esc(d.nome)} · ${fmtStamp(d.enviadoEm)} · ${esc(d.enviadoPor)}${d.obs ? ` · ${esc(d.obs)}` : ''}</span>
+        ${d.status === 'Recusado' ? `<span class="small doc-motivo">Recusado: ${esc(d.motivoRecusa)}${d.avisadoEm ? ' · avisado por e-mail' : ''}</span>` : ''}${d.leitura && d.status !== 'Recusado' ? `<span class="small ${d.leituraOk === 'nao' ? 'doc-alerta' : 'muted'}">${ic('search')} Leitura automática: ${esc(d.leitura)}</span>` : ''}</span>
+      <span class="row-actions">${isAdmin() ? `<button class="btn sm ${d.status === 'Aguardando' ? 'primary' : ''}" data-act="docConferir" data-id="${d.id}">${ic('check')} ${d.status === 'Aguardando' ? 'Conferir' : 'Rever'}</button>` : ''}<button class="btn sm" data-act="docVer" data-id="${d.id}">${ic('file')} Abrir</button>${isAdmin() ? `<button class="btn sm ghost icon" data-act="docExcluir" data-id="${d.id}" aria-label="Excluir documento" title="Excluir documento">${ic('x')}</button>` : ''}</span></div>`).join('')}</div>`
       : '<p class="small muted">Nenhum documento anexado.</p>'}
   </section>`;
 }
@@ -1379,9 +1388,22 @@ const tipoPrevisto = a => { const e = definitivaEm(a); return !e || e <= TODAY()
 function validadePrevista(a, tipo) {
   tipo = tipo || (a ? tipoPrevisto(a) : 'Definitiva');
   if (tipo === 'Provisória') { const [y, m, d] = definitivaEm(a).split('-').map(Number); return isoLocal(new Date(y, m - 1, d - 1)); }
-  const c = S.config, q = Math.max(0, parseInt(c.valQtd, 10) || 0), h = new Date();
+  return validadeCfg(S.config);
+}
+// validade de uma definitiva emitida hoje com a regra c (também usada na prévia das configurações)
+function validadeCfg(c) {
+  const q = Math.max(0, parseInt(c.valQtd, 10) || 0), h = new Date();
   const v = c.valUnid === 'meses' ? new Date(h.getFullYear(), h.getMonth() + q, h.getDate() - (q ? 1 : 0)) : new Date(h.getFullYear() + q, h.getMonth(), h.getDate() - (q ? 1 : 0));
   return c.valFimAno ? `${v.getFullYear()}-12-31` : isoLocal(v);
+}
+// prévia da regra de validade nas configurações
+function valPrevTxt(c) {
+  const q = parseInt(c.valQtd, 10), lim = c.valUnid === 'meses' ? 120 : 20;
+  if (isNaN(q) || q < 0) return '<b>Informe um número.</b>';
+  if (q >= 1900) return `<b>Informe a quantidade de ${c.valUnid === 'meses' ? 'meses' : 'anos'} (ex.: 5), não o ano.</b>`;
+  if (q > lim) return `<b>Máximo de ${lim} ${c.valUnid === 'meses' ? 'meses' : 'anos'}.</b>`;
+  if (!q && !c.valFimAno) return '<b>Informe pelo menos 1 ou marque "31 de dezembro".</b>';
+  return `Uma definitiva emitida hoje vale até <b>${fmtD(validadeCfg(c))}</b>. As já emitidas mantêm a validade impressa; a regra nova vale nas próximas emissões e renovações.`;
 }
 const regraValidade = () => { const c = S.config, q = Number(c.valQtd) || 0; return q ? `${plural(q, c.valUnid === 'meses' ? 'mês' : 'ano', c.valUnid === 'meses' ? 'meses' : 'anos')}${c.valFimAno ? ', até 31 de dezembro do último ano' : ' a partir da emissão'}` : 'até 31 de dezembro do ano da emissão'; };
 const temFoto = a => !!(a.fotoId || a.fotoMini);
@@ -1920,13 +1942,41 @@ Object.assign(ACT, {
     const tipo = $('#d-tipo').value, obs = $('#d-obs').value;
     run(async () => {
       const prep = await prepComprovante(f, 2400, 0.85);
-      await api('doc.enviar', { assocId: t.dataset.id, tipo, obs, ...prep }, { msg: 'Enviando documento…' });
-      closeModal(); render(); const a = assoc(t.dataset.id); toast((tipo === DOC_FICHA ? 'Ficha assinada anexada' : 'Documento anexado') + (a && docStatus(a).completo ? ' · documentação completa' : ''));
+      const r = await api('doc.enviar', { assocId: t.dataset.id, tipo, obs, ...prep }, { msg: 'Enviando e lendo o documento…' });
+      closeModal(); render(); const a = assoc(t.dataset.id);
+      if (r.leituraOk === 'nao') toast(`Atenção: ${r.leitura} O documento ficou aguardando conferência.`, 'bad');
+      else toast((tipo === DOC_FICHA ? 'Ficha assinada anexada' : 'Documento anexado') + (r.status === 'Aguardando' ? ' · aguardando conferência' : a && docStatus(a).completo ? ' · documentação completa' : ''));
     });
   },
   docVer(t) {
     const d = (S.documentos || []).find(x => x.id === t.dataset.id);
     run(async () => { const r = await api('doc.obter', { id: t.dataset.id }, { msg: 'Abrindo documento…' }); mostrarArquivo(r, d ? tipoDoc(d) : 'Documento'); });
+  },
+  docConferir(t) {
+    const d = (S.documentos || []).find(x => x.id === t.dataset.id), a = assoc(d.assocId);
+    run(async () => {
+      const r = await api('doc.obter', { id: d.id }, { msg: 'Abrindo documento…' });
+      const bin = atob(r.dados), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      if (UI.compUrl) URL.revokeObjectURL(UI.compUrl);
+      const url = UI.compUrl = URL.createObjectURL(new Blob([bytes], { type: r.mime }));
+      const email = a.email || a.responsavelEmail;
+      openModal(`<h2>Conferir documento</h2><p class="muted">${esc(a.nome)} · matrícula ${fmtMat(a.matricula)} · anexado por ${esc(d.enviadoPor)} em ${fmtStamp(d.enviadoEm)}</p>
+        ${/^image\//.test(r.mime) ? `<img class="comp-img" src="${url}" alt="${esc(tipoDoc(d))}">` : `<div class="note"><span>${ic('file')} Arquivo PDF: <a href="${url}" target="_blank" rel="noopener">abrir em outra aba</a> para conferir.</span></div>`}
+        ${d.leitura ? `<div class="note ${d.leituraOk === 'nao' ? 'warn' : d.leituraOk === 'sim' ? 'ok' : ''}"><span><b>Leitura automática:</b> ${esc(d.leitura)} <span class="muted">É só uma ajuda: confira o documento.</span></span></div>` : ''}
+        <div class="fields"><div class="field full"><label for="d-ctipo">É o documento</label><select id="d-ctipo">${TIPOS_DOC.map(tp => `<option ${tp === tipoDoc(d) ? 'selected' : ''}>${tp}</option>`).join('')}</select><span class="hint">Se foi anexado com o tipo errado, corrija aqui antes de aprovar.</span></div>
+          <div class="field full"><label for="d-cmot">Motivo da recusa</label><input id="d-cmot" maxlength="300" value="${esc(d.motivoRecusa || '')}" placeholder="Ex.: não é o documento pedido; foto ilegível; comprovante com mais de 90 dias" list="d-cmots"><datalist id="d-cmots">${['Não é o documento pedido', 'Foto ilegível ou cortada', 'Documento de outra pessoa', 'Comprovante com mais de 90 dias', 'Documento vencido', 'Ficha sem assinatura'].map(m => `<option value="${m}">`).join('')}</datalist></div>
+          <label class="check small field full"><input type="checkbox" id="d-cav" ${email ? 'checked' : 'disabled'}> Avisar a recusa por e-mail${email ? ` (${esc(email)})` : ' (sem e-mail no cadastro)'}</label></div>
+        <div class="modal-actions"><button class="btn" data-act="close">Voltar</button><button class="btn danger" data-act="docConferirOk" data-id="${d.id}" data-dec="Recusado">${ic('x')} Recusar</button><button class="btn primary" data-act="docConferirOk" data-id="${d.id}" data-dec="Aprovado">${ic('check')} Aprovar</button></div>`, 'modal-wide');
+    });
+  },
+  docConferirOk(t) {
+    const dec = t.dataset.dec, motivo = $('#d-cmot').value.trim();
+    if (dec === 'Recusado' && !motivo) { toast('Informe o motivo da recusa.', 'bad'); $('#d-cmot').focus(); return; }
+    run(async () => {
+      const r = await api('doc.conferir', { id: t.dataset.id, decisao: dec, tipo: $('#d-ctipo').value, motivo, avisar: dec === 'Recusado' && !!$('#d-cav')?.checked }, { msg: dec === 'Aprovado' ? 'Aprovando…' : 'Recusando…' });
+      closeModal(); render();
+      toast(dec === 'Aprovado' ? 'Documento aprovado' : `Documento recusado${r.avisado ? ' · aviso enviado por e-mail' : ''}${r.aviso ? ' · ' + r.aviso : ''}`, r.aviso ? 'bad' : 'ok');
+    });
   },
   docExcluir(t) {
     const d = (S.documentos || []).find(x => x.id === t.dataset.id);
@@ -2043,6 +2093,7 @@ const FORM = {
     let ok = fieldErr('acnpj', !v('a-cnpj') || cnpjValido(v('a-cnpj')) ? '' : 'CNPJ inválido.');
     ok = fieldErr('aemail', !v('a-email') || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('a-email')) ? '' : 'E-mail inválido.') && ok;
     if (!ok) return;
+    if ($('#c-vq')) { const pv = valPrevTxt({ valQtd: v('c-vq'), valUnid: v('c-vu'), valFimAno: $('#c-vfim').checked }); if (pv.startsWith('<b>')) { toast('Validade da definitiva: ' + pv.replace(/<[^>]+>/g, ''), 'bad'); $('#c-vq').focus(); return; } }
     run(async () => {
       await api('config.salvar', { config: { cobrancaDesde: v('c-desde'), toleranciaMeses: v('c-tol'), isencaoMeses: v('c-isen'), anosDefinitiva: v('c-anosdef'), valQtd: v('c-vq'), valUnid: v('c-vu'), valFimAno: !!$('#c-vfim')?.checked, presidenteNome: v('c-pres'), textoVerso: v('c-verso'), siteUrl: v('c-url'), reciboAssina: v('c-rass'), tesoureiroNome: v('c-tes'), cidade: v('c-cid'), fichaDeclaracao: v('c-decl'), termoImagem: ($('#c-termo')?.value || '').trim(), assoc: { nome: v('a-nome'), cnpj: digits(v('a-cnpj')), telefone: v('a-tel'), endereco: v('a-end'), email: v('a-email'), site: v('a-site') } } });
       render(); toast('Configurações salvas');
@@ -2092,6 +2143,10 @@ const CHG = {
   },
 };
 Object.assign(INP, {
+  valPrev() {
+    const c = { valQtd: $('#c-vq').value, valUnid: $('#c-vu').value, valFimAno: $('#c-vfim').checked };
+    $('#c-vq').max = c.valUnid === 'meses' ? 120 : 20; $('#c-vprev').innerHTML = valPrevTxt(c);
+  },
   isenPrazo() { const ini = $('#i-ini').value, n = parseInt($('#i-mes').value, 10); const h = $('#i-ate'); if (h) h.textContent = ini && n >= 1 && n <= 12 ? `Isento até ${fmtComp(addMonthsComp(ini, n - 1))}.` : 'De 1 a 12 meses.'; },
   isenRenova(el) { const n = parseInt(el.value, 10); $('#i-ate').textContent = n >= 1 && n <= 12 ? `Isento até ${fmtComp(addMonthsComp(el.dataset.fim, n))}.` : 'De 1 a 12 meses.'; },
   cepForm(el) {
@@ -2104,6 +2159,7 @@ Object.assign(INP, {
 });
 Object.assign(CHG, {
   isenPrazo() { INP.isenPrazo(); },
+  valPrev() { INP.valPrev(); },
   asDocs(el) { P.docs = el.value; $('#as-res').innerHTML = assocResults(); },
   nascForm(el) { const box = $('#f-resp-box'); if (box) box.hidden = !(el.value && idade(el.value) < 18) && !($('#f-rnome') && $('#f-rnome').value); },
   finDe(el) { if (el.value) { P.de = el.value; $('#fin-res').innerHTML = finResults(); } },
